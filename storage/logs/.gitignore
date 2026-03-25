@@ -1,0 +1,66 @@
+# Laravel specific
+/node_modules
+/public/hot
+/public/storage
+/public/build
+/storage/*.key
+/storage/pail
+/vendor
+/.env
+/.env.backup
+/.env.production
+/.phpunit.result.cache
+/.phpunit.cache
+/auth.json
+Homestead.json
+Homestead.yaml
+
+# IDE
+/.idea
+/.vscode
+/.fleet
+/.nova
+/.zed
+/.phpactor.json
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Logs
+*.log
+
+# Composer
+/composer.lock
+
+# Docker
+/docker-compose.override.yml
+
+# Laravel Horizon
+/storage/horizon-*.json
+
+# Laravel Telescope
+/storage/telescope-*.json
+
+# Laravel Pulse
+/storage/pulse-*.json
+
+# PHPUnit
+/phpunit.xml
+.phpunit.result.cache
+/testbench.yaml
+
+# PHPCS
+/.phpcs-cache
+
+# Laravel Sail
+!/docker-compose.yml
+/docker-compose.override.yml
+*.lock
+*.lock
+composer.lock
