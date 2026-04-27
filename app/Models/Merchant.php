@@ -15,12 +15,19 @@ class Merchant extends Model
         'whatsapp_number',
         'default_service_fee',
         'status',
+        'onboarding_plan',
+        'free_trial_status',
+        'free_trial_ineligible_reason',
+        'free_trial_message',
+        'trial_blocked_keywords',
+        'normalized_trial_address',
     ];
 
     protected function casts(): array
     {
         return [
             'default_service_fee' => 'decimal:2',
+            'trial_blocked_keywords' => 'array',
         ];
     }
 
@@ -47,5 +54,25 @@ class Merchant extends Model
     public function walletTransactions()
     {
         return $this->hasMany(WalletTransaction::class);
+    }
+
+    public function stripeTopUpIntents()
+    {
+        return $this->hasMany(StripeTopUpIntent::class);
+    }
+
+    public function providerVoucherLinks()
+    {
+        return $this->hasMany(ProviderVoucherLink::class);
+    }
+
+    public function addressChangeRequests()
+    {
+        return $this->hasMany(VenueAddressChangeRequest::class);
+    }
+
+    public function informationRecords()
+    {
+        return $this->hasMany(InformationRecord::class);
     }
 }

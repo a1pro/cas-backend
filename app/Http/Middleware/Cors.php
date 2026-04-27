@@ -21,6 +21,7 @@ class Cors
         'https://gottaweb.a1professionals.net',
         'https://cas.a1professionals.net',
     ];
+        
 
     /**
      * Handle an incoming request.
@@ -31,8 +32,11 @@ class Cors
     {
         $origin = $request->header('Origin');
         
-        // Check if origin is allowed
-        if (in_array($origin, $this->allowedOrigins)) {
+        // Allow all origins in development
+        $isDevelopment = app()->environment('local', 'testing');
+        
+        // Check if origin is allowed or in development
+        if ($isDevelopment || in_array($origin, $this->allowedOrigins)) {
             // Handle preflight OPTIONS request
             if ($request->isMethod('OPTIONS')) {
                 return response('', 200)
@@ -46,10 +50,11 @@ class Cors
             // Handle actual request
             $response = $next($request);
             
-            $response->headers->set('Access-Control-Allow-Origin', $origin);
+            $allowedOrigin = $isDevelopment ? '*' : $origin;
+            $response->headers->set('Access-Control-Allow-Origin', $allowedOrigin);
             $response->headers->set('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS');
             $response->headers->set('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, Accept, Origin, X-CSRF-TOKEN');
-            $response->headers->set('Access-Control-Allow-Credentials', 'true');
+            $response->headers->set('Access-Control-Allow-Credentials', $isDevelopment ? 'false' : 'true');
             
             return $response;
         }

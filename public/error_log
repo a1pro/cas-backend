@@ -1,0 +1,1 @@
+[26-Apr-2026 08:06:23 UTC] PHP Fatal error:  Cannot declare class App\Http\Controllers\Api\Auth\AuthController, because the name is already in use in /home/talkto/talktocas.a1professionals.net_public_html/config/app/Http/Controllers/Api/Auth/AuthController.php on line 17

@@ -1,0 +1,12 @@
+Main fix in this build:
+- Eloquent model table names now explicitly match migrations: whatsapp_sessions and whatsapp_messages.
+- This fixes the error querying whats_app_sessions / whats_app_messages.
+- Webhook and outbound payload logging now uses JSON strings to avoid "Over 9 levels deep" log messages.
+
+After unzip:
+1. Copy .env.example to .env and fill real values
+2. php artisan optimize:clear
+3. php artisan migrate
+4. php artisan serve
+5. Keep ngrok running
+6. Send START from WhatsApp

@@ -1,19 +1,6 @@
 <?php
 
 return [
-
-    /*
-    |--------------------------------------------------------------------------
-    | Third Party Services
-    |--------------------------------------------------------------------------
-    |
-    | This file is for storing the credentials for third party services such
-    | as Mailgun, Postmark, AWS and more. This file provides the de facto
-    | location for this type of information, allowing packages to have
-    | a conventional file to locate the various service credentials.
-    |
-    */
-
     'postmark' => [
         'key' => env('POSTMARK_API_KEY'),
     ],
@@ -34,6 +21,7 @@ return [
             'channel' => env('SLACK_BOT_USER_DEFAULT_CHANNEL'),
         ],
     ],
+
     'daily' => [
         'api_key' => env('DAILY_API_KEY'),
     ],
@@ -46,6 +34,31 @@ return [
 
     'frontend' => [
         'url' => env('FRONTEND_URL', env('APP_URL', 'http://localhost:8080')),
+    ],
+
+    'whatsapp360' => [
+        'enabled' => env('WHATSAPP_360_ENABLED', false),
+        'api_base' => env('WHATSAPP_360_API_BASE', 'https://waba-v2.360dialog.io'),
+        'api_key' => env('WHATSAPP_360_API_KEY'),
+        'phone_number' => env('WHATSAPP_360_PHONE_NUMBER'),
+        'display_phone_number' => env('WHATSAPP_360_DISPLAY_PHONE_NUMBER'),
+        'start_message' => env('WHATSAPP_360_START_MESSAGE', 'Hi TALK TO CAS'),
+        'verify_token' => env('WHATSAPP_360_VERIFY_TOKEN'),
+        'app_secret' => env('WHATSAPP_360_APP_SECRET'),
+    ],
+
+    'google' => [
+        'maps_api_key' => env('GOOGLE_MAPS_API_KEY', env('GOOGLE_MAPS_SERVER_KEY')),
+    ],
+
+    'google_maps' => [
+        'server_key' => env('GOOGLE_MAPS_SERVER_KEY', env('GOOGLE_MAPS_API_KEY')),
+    ],
+
+    'openweather' => [
+        'api_key' => env('OPENWEATHER_API_KEY'),
+        'api_base' => env('OPENWEATHER_API_BASE', 'https://api.openweathermap.org'),
+        'country_code' => env('TALKTOCAS_WEATHER_COUNTRY_CODE', 'GB'),
     ],
 
 ];

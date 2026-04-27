@@ -1,30 +1,102 @@
-# Laravel specific
+# Laravel GitIgnore File
 
+# Laravel specific files
+.env
+.env.backup
+.env.*
+phpunit.xml
+.env.local
+.env.php
 
-/node_modules
+# Application specific
+/app/Models/Generated/
+/storage/app/*
+/storage/framework/cache/*
+/storage/framework/sessions/*
+/storage/framework/views/*
+/storage/framework/testing/*
+/storage/logs/*
+/bootstrap/cache/*
+/vendor/
+
+# IDE and Editor files
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+.history/
+*.history
+
+# Node modules (if using npm)
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Composer
+composer.phar
+/vendor/
+homestead.json
+homestead.yaml
+npm-debug.log
+yarn-error.log
+
+# Laravel specific cache and config files
+/config/app.php
+/config/database.php
+/config/mail.php
+/config/services.php
+/config/cache.php
+/config/session.php
+/config/queue.php
+
+# Log files
+*.log
+logs/
+/storage/logs/laravel.log
+/storage/logs/laravel-*.log
+
+# Temporary files
+*.tmp
+*.temp
+.tmp/
+.temp/
+
+# Build and distribution files
+/build/
+/dist/
 /public/hot
 /public/storage
-/public/build
-/storage/*.key
-/storage/pail
-/vendor
-/.env.backup
-/.env.production
+
+# Testing
+/coverage/
 /.phpunit.result.cache
-/.phpunit.cache
-/auth.json
-Homestead.json
-Homestead.yaml
+.phpunit.result.cache
 
-# IDE
-/.idea
-/.vscode
-/.fleet
-/.nova
-/.zed
-/.phpactor.json
+# Deployment
+.deploy/
+Deploy/
+*.tar.gz
+*.zip
 
-# OS generated files
+# Local configuration
+/config/local/
+.env.local
+.env.local.*
+
+# Database
+*.sqlite
+*.sqlite3
+*.db
+
+# Backup files
+*.bak
+*.backup
+
+# Operating System
 .DS_Store
 .DS_Store?
 ._*
@@ -32,38 +104,3 @@ Homestead.yaml
 .Trashes
 ehthumbs.db
 Thumbs.db
-.env
-
-# Logs
-*.log
-
-# Composer
-/composer.lock
-
-# Docker
-/docker-compose.override.yml
-
-# Laravel Horizon
-/storage/horizon-*.json
-
-# Laravel Telescope
-/storage/telescope-*.json
-
-# Laravel Pulse
-/storage/pulse-*.json
-
-# PHPUnit
-/phpunit.xml
-.phpunit.result.cache
-/testbench.yaml
-
-# PHPCS
-/.phpcs-cache
-
-# Laravel Sail
-!/docker-compose.yml
-/docker-compose.override.yml
-*.lock
-*.lock
-composer.lock
-config.bat

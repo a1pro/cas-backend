@@ -1,0 +1,43 @@
+TALK TO CAS - WhatsApp debug build
+
+What changed in this build:
+- Removed shipped laravel.log so Laravel creates a fresh UTF-8 log file.
+- Added detailed 360dialog inbound/outbound/status logging.
+- Same number can restart on: hi, hello, start, restart, menu, hi talk to cas.
+- Welcome question is now a single message with numbered options.
+- Journey selection accepts 1 = Going Out, 2 = Food.
+- CORS reads from CORS_ALLOWED_ORIGINS.
+
+Important:
+1) Delete any old log file before testing:
+   storage/logs/laravel.log
+
+2) Use .env.example as base and fill in real values.
+
+3) Run these commands:
+   composer install
+   php artisan key:generate
+   php artisan optimize:clear
+   php artisan migrate
+   php artisan serve
+
+4) Keep ngrok running and set webhook to:
+   https://YOUR-NGROK-DOMAIN/api/v1/whatsapp/360dialog/webhook
+
+5) Test by sending one of these from WhatsApp:
+   START
+   HI
+   HI TALK TO CAS
+
+6) Check logs in:
+   storage/logs/laravel.log
+
+Look for these lines:
+- 360dialog webhook payload received
+- WhatsApp inbound event
+- WhatsApp provider session lookup
+- WhatsApp welcome triggered
+- WhatsApp outbound message preparing
+- 360dialog outbound request
+- 360dialog outbound response
+- 360dialog outbound status webhook
