@@ -10,6 +10,7 @@ use App\Http\Requests\WhatsApp\StartChatSessionRequest;
 use App\Models\Venue;
 use App\Models\WhatsAppSession;
 use App\Services\Chat\WhatsAppChatService;
+use Illuminate\Support\Facades\DB;
 
 class ChatSessionController extends BaseController
 {
@@ -19,39 +20,138 @@ class ChatSessionController extends BaseController
 
     public function start(StartChatSessionRequest $request)
     {
-        $session = $this->whatsAppChatService->startSession(array_merge(
-            $request->validated(),
-            ['device_fingerprint' => $request->header('X-Device-Fingerprint')]
-        ));
+        try {
+            DB::beginTransaction();
 
-        return $this->success($this->payload($session), 'WhatsApp demo session started', 201);
+            $session = $this->whatsAppChatService->startSession(array_merge(
+                $request->validated(),
+                ['device_fingerprint' => $request->header('X-Device-Fingerprint')]
+            ));
+
+            $data = $this->payload($session);
+
+            DB::commit();
+
+            return response()->json([
+                'success' => true,
+                'status_code' => 200,
+                'message' => 'Operation completed successfully',
+                'data' => $data,
+            ], 200);
+        } catch (\Exception $e) {
+            DB::rollBack();
+
+            return response()->json([
+                'success' => false,
+                'status_code' => 500,
+                'message' => 'Something went wrong. ' . $e->getMessage(),
+            ], 500);
+        }
     }
 
     public function show(WhatsAppSession $session)
     {
-        return $this->success($this->payload($session->load(['messages', 'user', 'selectedVenue'])));
+        try {
+            $data = $this->payload($session->load(['messages', 'user', 'selectedVenue']));
+
+            return response()->json([
+                'success' => true,
+                'status_code' => 200,
+                'message' => 'Operation completed successfully',
+                'data' => $data,
+            ], 200);
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'status_code' => 500,
+                'message' => 'Something went wrong. ' . $e->getMessage(),
+            ], 500);
+        }
     }
 
     public function message(WhatsAppSession $session, SendChatMessageRequest $request)
     {
-        $session = $this->whatsAppChatService->handleMessage($session, $request->validated()['message']);
+        try {
+            DB::beginTransaction();
 
-        return $this->success($this->payload($session->load(['messages', 'user', 'selectedVenue'])));
+            $session = $this->whatsAppChatService->handleMessage($session, $request->validated()['message']);
+
+            $data = $this->payload($session->load(['messages', 'user', 'selectedVenue']));
+
+            DB::commit();
+
+            return response()->json([
+                'success' => true,
+                'status_code' => 200,
+                'message' => 'Operation completed successfully',
+                'data' => $data,
+            ], 200);
+        } catch (\Exception $e) {
+            DB::rollBack();
+
+            return response()->json([
+                'success' => false,
+                'status_code' => 500,
+                'message' => 'Something went wrong. ' . $e->getMessage(),
+            ], 500);
+        }
     }
 
     public function location(WhatsAppSession $session, ShareLocationRequest $request)
     {
-        $session = $this->whatsAppChatService->shareLocation($session, $request->validated());
+        try {
+            DB::beginTransaction();
 
-        return $this->success($this->payload($session->load(['messages', 'user', 'selectedVenue'])));
+            $session = $this->whatsAppChatService->shareLocation($session, $request->validated());
+
+            $data = $this->payload($session->load(['messages', 'user', 'selectedVenue']));
+
+            DB::commit();
+
+            return response()->json([
+                'success' => true,
+                'status_code' => 200,
+                'message' => 'Operation completed successfully',
+                'data' => $data,
+            ], 200);
+        } catch (\Exception $e) {
+            DB::rollBack();
+
+            return response()->json([
+                'success' => false,
+                'status_code' => 500,
+                'message' => 'Something went wrong. ' . $e->getMessage(),
+            ], 500);
+        }
     }
 
     public function selectVenue(WhatsAppSession $session, SelectVenueRequest $request)
     {
-        $venue = Venue::findOrFail($request->validated()['venue_id']);
-        $session = $this->whatsAppChatService->selectVenue($session, $venue);
+        try {
+            DB::beginTransaction();
 
-        return $this->success($this->payload($session->load(['messages', 'user', 'selectedVenue'])));
+            $venue = Venue::findOrFail($request->validated()['venue_id']);
+            $session = $this->whatsAppChatService->selectVenue($session, $venue);
+
+            $data = $this->payload($session->load(['messages', 'user', 'selectedVenue']));
+
+            DB::commit();
+
+            return response()->json([
+                'success' => true,
+                'status_code' => 200,
+                'message' => 'Operation completed successfully',
+                'data' => $data,
+            ], 200);
+        } catch (\Exception $e) {
+            DB::rollBack();
+
+            return response()->json([
+                'success' => false,
+                'status_code' => 500,
+                'message' => 'Something went wrong. ' . $e->getMessage(),
+            ], 500);
+        }
     }
 
     private function payload(WhatsAppSession $session): array

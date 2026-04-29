@@ -49,850 +49,1339 @@ class MerchantDashboardController extends BaseController
 
     public function dashboard(Request $request)
     {
-        $merchant = $this->merchantForUser($request);
-        $primaryVenue = $this->primaryVenueForMerchant($merchant);
+        try {
+            $merchant = $this->merchantForUser($request);
+            $primaryVenue = $this->primaryVenueForMerchant($merchant);
 
-        return $this->success([
-            'merchant' => [
-                'id' => $merchant->id,
-                'business_name' => $merchant->business_name,
-                'business_type' => $merchant->business_type,
-                'status' => $merchant->status,
-                'joined_at' => optional($merchant->created_at)?->toDateTimeString(),
-                'onboarding_plan' => $merchant->onboarding_plan,
-                'free_trial_status' => $merchant->free_trial_status,
-                'free_trial_message' => $merchant->free_trial_message,
-                'free_trial_ineligible_reason' => $merchant->free_trial_ineligible_reason,
-                'trial_blocked_keywords' => $merchant->trial_blocked_keywords ?? [],
-                'wallet' => $this->walletPayload($merchant),
-                'business_rules' => $this->merchantBusinessRulesPayload($merchant),
-            ],
-            'stats' => [
-                'active_venues' => $merchant->venues()->where('is_active', true)->count(),
-                'issued_vouchers' => $merchant->vouchers()->where('status', 'issued')->count(),
-                'redeemed_vouchers' => $merchant->vouchers()->where('status', 'redeemed')->count(),
-                'wallet_balance' => number_format((float) $merchant->wallet->balance, 2, '.', ''),
-            ],
-            'primary_venue' => $primaryVenue,
-            'wallet_status' => $this->walletAlertService->statusForWallet($merchant->wallet),
-            'stripe_finance' => $this->stripeFinanceService->merchantPayload($merchant),
-            'provider_verification' => [
-                'summary' => $this->providerVerificationService->summaryForMerchant($merchant),
-                'pending_vouchers' => $this->providerVerificationService->pendingVoucherPayloads(
-                    $merchant,
-                    (int) config('talktocas.provider_verification.dashboard_pending_limit', 5)
-                ),
-                'recent_events' => $this->providerVerificationService->recentEventPayloads(
-                    $merchant,
-                    (int) config('talktocas.provider_verification.dashboard_recent_event_limit', 10)
-                ),
-            ],
-            'lead_generator' => $this->leadGeneratorService->summaryForMerchant(
-                $merchant,
-                (int) config('talktocas.lead_generator.merchant_recent_limit', 5)
-            ),
-            'weather_behaviour' => $this->weatherBehaviourService->merchantVenueInsights($primaryVenue, $merchant->business_type),
-            'urgency_inventory' => $primaryVenue ? $this->venueUrgencyService->summaryForVenue($primaryVenue) : null,
-            'offer_snapshot' => $primaryVenue ? $this->offerPayload($merchant, $primaryVenue) : null,
-            'offer_sync' => $this->offerSyncService->merchantPayload($merchant, $primaryVenue),
-            'address_change' => $this->addressApprovalService->merchantPayload($primaryVenue),
-            'exact_voucher_links' => $this->providerVoucherLinkService->merchantSummary($merchant, $primaryVenue),
-            'recent_vouchers' => Voucher::with(['venue', 'user'])
-                ->where('merchant_id', $merchant->id)
-                ->latest()
-                ->take(10)
-                ->get(),
-            'recent_transactions' => WalletTransaction::where('merchant_id', $merchant->id)
-                ->latest()
-                ->take(10)
-                ->get(),
-        ]);
+            return response()->json([
+                'success' => true,
+                'status_code' => 200,
+                'message' => 'Operation completed successfully',
+                'data' => [
+                        'merchant' => [
+                            'id' => $merchant->id,
+                            'business_name' => $merchant->business_name,
+                            'business_type' => $merchant->business_type,
+                            'status' => $merchant->status,
+                            'joined_at' => optional($merchant->created_at)?->toDateTimeString(),
+                            'onboarding_plan' => $merchant->onboarding_plan,
+                            'free_trial_status' => $merchant->free_trial_status,
+                            'free_trial_message' => $merchant->free_trial_message,
+                            'free_trial_ineligible_reason' => $merchant->free_trial_ineligible_reason,
+                            'trial_blocked_keywords' => $merchant->trial_blocked_keywords ?? [],
+                            'wallet' => $this->walletPayload($merchant),
+                            'business_rules' => $this->merchantBusinessRulesPayload($merchant),
+                        ],
+                        'stats' => [
+                            'active_venues' => $merchant->venues()->where('is_active', true)->count(),
+                            'issued_vouchers' => $merchant->vouchers()->where('status', 'issued')->count(),
+                            'redeemed_vouchers' => $merchant->vouchers()->where('status', 'redeemed')->count(),
+                            'wallet_balance' => number_format((float) $merchant->wallet->balance, 2, '.', ''),
+                        ],
+                        'primary_venue' => $primaryVenue,
+                        'wallet_status' => $this->walletAlertService->statusForWallet($merchant->wallet),
+                        'stripe_finance' => $this->stripeFinanceService->merchantPayload($merchant),
+                        'provider_verification' => [
+                            'summary' => $this->providerVerificationService->summaryForMerchant($merchant),
+                            'pending_vouchers' => $this->providerVerificationService->pendingVoucherPayloads(
+                                $merchant,
+                                (int) config('talktocas.provider_verification.dashboard_pending_limit', 5)
+                            ),
+                            'recent_events' => $this->providerVerificationService->recentEventPayloads(
+                                $merchant,
+                                (int) config('talktocas.provider_verification.dashboard_recent_event_limit', 10)
+                            ),
+                        ],
+                        'lead_generator' => $this->leadGeneratorService->summaryForMerchant(
+                            $merchant,
+                            (int) config('talktocas.lead_generator.merchant_recent_limit', 5)
+                        ),
+                        'weather_behaviour' => $this->weatherBehaviourService->merchantVenueInsights($primaryVenue, $merchant->business_type),
+                        'urgency_inventory' => $primaryVenue ? $this->venueUrgencyService->summaryForVenue($primaryVenue) : null,
+                        'offer_snapshot' => $primaryVenue ? $this->offerPayload($merchant, $primaryVenue) : null,
+                        'offer_sync' => $this->offerSyncService->merchantPayload($merchant, $primaryVenue),
+                        'address_change' => $this->addressApprovalService->merchantPayload($primaryVenue),
+                        'exact_voucher_links' => $this->providerVoucherLinkService->merchantSummary($merchant, $primaryVenue),
+                        'recent_vouchers' => Voucher::with(['venue', 'user'])
+                            ->where('merchant_id', $merchant->id)
+                            ->latest()
+                            ->take(10)
+                            ->get(),
+                        'recent_transactions' => WalletTransaction::where('merchant_id', $merchant->id)
+                            ->latest()
+                            ->take(10)
+                            ->get(),
+                    ],
+            ], 200);
+        
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'status_code' => 500,
+                'message' => 'Something went wrong. ' . $e->getMessage(),
+            ], 500);
+        }
     }
 
     public function offerSettings(Request $request)
     {
-        $merchant = $this->merchantForUser($request);
-        $venue = $this->primaryVenueForMerchant($merchant);
+        try {
+            $merchant = $this->merchantForUser($request);
+            $venue = $this->primaryVenueForMerchant($merchant);
 
-        return $this->success($this->offerPayload($merchant, $venue));
+            return response()->json([
+                'success' => true,
+                'status_code' => 200,
+                'message' => 'Operation completed successfully',
+                'data' => $this->offerPayload($merchant, $venue),
+            ], 200);
+        
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'status_code' => 500,
+                'message' => 'Something went wrong. ' . $e->getMessage(),
+            ], 500);
+        }
     }
 
     public function updateOfferSettings(Request $request)
     {
-        $merchant = $this->merchantForUser($request);
-        $wallet = $merchant->wallet;
-        $venue = $this->primaryVenueForMerchant($merchant);
+        try {
+            DB::beginTransaction();
 
-        $validated = $request->validate([
-            'offer_enabled' => ['required', 'boolean'],
-            'business_type' => ['required', 'in:club,bar,restaurant,takeaway,cafe'],
-            'offer_type' => ['required', 'in:food,ride,dual_choice'],
-            'voucher_amount' => ['required', 'numeric', 'min:1', 'max:100'],
-            'offer_days' => ['required', 'array', 'min:1'],
-            'offer_days.*' => ['required', 'in:monday,tuesday,wednesday,thursday,friday,saturday,sunday'],
-            'start_time' => ['nullable', 'date_format:H:i'],
-            'end_time' => ['nullable', 'date_format:H:i'],
-            'minimum_order' => ['nullable', 'numeric', 'min:0'],
-            'fulfilment_type' => ['nullable', 'in:venue,collection,delivery,both'],
-            'ride_trip_type' => ['nullable', 'in:to_venue,to_and_from'],
-            'low_balance_threshold' => ['required', 'numeric', 'min:1', 'max:100000'],
-            'auto_top_up_enabled' => ['nullable', 'boolean'],
-            'auto_top_up_amount' => ['nullable', 'numeric', 'min:1', 'max:100000'],
-            'urgency_enabled' => ['nullable', 'boolean'],
-            'daily_voucher_cap' => ['nullable', 'integer', 'min:1', 'max:500'],
-        ]);
+            $merchant = $this->merchantForUser($request);
+            $wallet = $merchant->wallet;
+            $venue = $this->primaryVenueForMerchant($merchant);
 
-        $offerType = $validated['offer_type'];
-        $range = OfferRules::voucherRangeForBusiness($validated['business_type']);
-        $voucherAmount = (float) $validated['voucher_amount'];
-
-        if ($voucherAmount < $range['min'] || $voucherAmount > $range['max']) {
-            return $this->error(OfferRules::voucherAmountMessage($validated['business_type']), 422, [
-                'voucher_amount' => [OfferRules::voucherAmountMessage($validated['business_type'])],
+            $validated = $request->validate([
+                'offer_enabled' => ['required', 'boolean'],
+                'business_type' => ['required', 'in:club,bar,restaurant,takeaway,cafe'],
+                'offer_type' => ['required', 'in:food,ride,dual_choice'],
+                'voucher_amount' => ['required', 'numeric', 'min:1', 'max:100'],
+                'offer_days' => ['required', 'array', 'min:1'],
+                'offer_days.*' => ['required', 'in:monday,tuesday,wednesday,thursday,friday,saturday,sunday'],
+                'start_time' => ['nullable', 'date_format:H:i'],
+                'end_time' => ['nullable', 'date_format:H:i'],
+                'minimum_order' => ['nullable', 'numeric', 'min:0'],
+                'fulfilment_type' => ['nullable', 'in:venue,collection,delivery,both'],
+                'ride_trip_type' => ['nullable', 'in:to_venue,to_and_from'],
+                'low_balance_threshold' => ['required', 'numeric', 'min:1', 'max:100000'],
+                'auto_top_up_enabled' => ['nullable', 'boolean'],
+                'auto_top_up_amount' => ['nullable', 'numeric', 'min:1', 'max:100000'],
+                'urgency_enabled' => ['nullable', 'boolean'],
+                'daily_voucher_cap' => ['nullable', 'integer', 'min:1', 'max:500'],
             ]);
-        }
 
-        if (OfferRules::offerTypeSupportsRide($offerType) && blank($validated['ride_trip_type'] ?? null)) {
-            return $this->error('Choose whether the ride voucher is 1 Trip or 2 Trips (to-and-from).', 422, [
-                'ride_trip_type' => ['Ride trip type is required for ride-only and dual-choice offers.'],
-            ]);
-        }
+            $offerType = $validated['offer_type'];
+            $range = OfferRules::voucherRangeForBusiness($validated['business_type']);
+            $voucherAmount = (float) $validated['voucher_amount'];
 
-        if (! OfferRules::offerTypeSupportsRide($offerType)) {
-            $validated['ride_trip_type'] = null;
-        }
+            if ($voucherAmount < $range['min'] || $voucherAmount > $range['max']) {
+                DB::rollBack();
 
-        $serviceFee = (float) ($merchant->default_service_fee ?? 2.50);
-        $requiredBalance = OfferRules::minimumWalletBalanceForOffer(
-            $offerType,
-            $voucherAmount,
-            $serviceFee,
-            $validated['ride_trip_type'] ?? null
-        );
+                return response()->json([
+                    'success' => false,
+                    'status_code' => 422,
+                    'message' => OfferRules::voucherAmountMessage($validated['business_type']),
+                    'errors' => [
+                            'voucher_amount' => [OfferRules::voucherAmountMessage($validated['business_type'])],
+                        ],
+                ], 422);
+            }
 
-        if ($requiredBalance > 0 && (float) $wallet->balance < $requiredBalance) {
-            return $this->error(
-                'This offer cannot be saved because the current wallet balance is too low for the selected trip mode.',
-                422,
-                [
-                    'wallet_balance' => [
-                        sprintf(
-                            'At least £%.2f is required for %s.',
-                            $requiredBalance,
-                            OfferRules::rideTripTypeLabel($validated['ride_trip_type'] ?? null)
-                        ),
-                    ],
-                ]
+            if (OfferRules::offerTypeSupportsRide($offerType) && blank($validated['ride_trip_type'] ?? null)) {
+                DB::rollBack();
+
+                return response()->json([
+                    'success' => false,
+                    'status_code' => 422,
+                    'message' => 'Choose whether the ride voucher is 1 Trip or 2 Trips (to-and-from).',
+                    'errors' => [
+                            'ride_trip_type' => ['Ride trip type is required for ride-only and dual-choice offers.'],
+                        ],
+                ], 422);
+            }
+
+            if (! OfferRules::offerTypeSupportsRide($offerType)) {
+                $validated['ride_trip_type'] = null;
+            }
+
+            $serviceFee = (float) ($merchant->default_service_fee ?? 2.50);
+            $requiredBalance = OfferRules::minimumWalletBalanceForOffer(
+                $offerType,
+                $voucherAmount,
+                $serviceFee,
+                $validated['ride_trip_type'] ?? null
             );
+
+            if ($requiredBalance > 0 && (float) $wallet->balance < $requiredBalance) {
+                DB::rollBack();
+
+                return response()->json([
+                    'success' => false,
+                    'status_code' => 422,
+                    'message' => 'This offer cannot be saved because the current wallet balance is too low for the selected trip mode.',
+                    'errors' => [
+                            'wallet_balance' => [
+                                sprintf(
+                                    'At least £%.2f is required for %s.',
+                                    $requiredBalance,
+                                    OfferRules::rideTripTypeLabel($validated['ride_trip_type'] ?? null)
+                                ),
+                            ],
+                        ],
+                ], 422);
+            }
+
+            $minimumTopUpAmount = $this->merchantBusinessRuleService->minimumTopUpAmount();
+            $autoTopUpEnabled = (bool) ($validated['auto_top_up_enabled'] ?? false);
+            $autoTopUpAmount = (float) ($validated['auto_top_up_amount'] ?? ($wallet->auto_top_up_amount ?? $minimumTopUpAmount));
+
+            if ($autoTopUpEnabled && $autoTopUpAmount < $minimumTopUpAmount) {
+                DB::rollBack();
+
+                return response()->json([
+                    'success' => false,
+                    'status_code' => 422,
+                    'message' => sprintf('Auto top-up amount must be at least £%.2f.', $minimumTopUpAmount),
+                    'errors' => [
+                            'auto_top_up_amount' => [sprintf('Auto top-up amount must be at least £%.2f.', $minimumTopUpAmount)],
+                        ],
+                ], 422);
+            }
+
+            $urgencyEnabled = (bool) ($validated['urgency_enabled'] ?? ($venue->urgency_enabled ?? config('talktocas.urgency.enabled', true)));
+            $dailyVoucherCap = $urgencyEnabled
+                ? (int) (($validated['daily_voucher_cap'] ?? $venue->daily_voucher_cap) ?: config('talktocas.urgency.default_daily_cap', 5))
+                : null;
+
+            if (! OfferRules::offerTypeSupportsFood($offerType)) {
+                $validated['minimum_order'] = null;
+                $validated['fulfilment_type'] = 'venue';
+            }
+
+            if (OfferRules::offerTypeSupportsFood($offerType) && blank($validated['minimum_order'] ?? null)) {
+                $validated['minimum_order'] = 25;
+            }
+
+            if (OfferRules::offerTypeSupportsFood($offerType) && blank($validated['fulfilment_type'] ?? null)) {
+                $validated['fulfilment_type'] = 'collection';
+            }
+
+            $days = collect($validated['offer_days'])
+                ->map(fn ($day) => strtolower(trim($day)))
+                ->unique()
+                ->values()
+                ->all();
+
+            $previousSnapshot = [
+                'merchant' => [
+                    'business_type' => $merchant->business_type,
+                ],
+                'wallet' => [
+                    'low_balance_threshold' => (float) $wallet->low_balance_threshold,
+                    'auto_top_up_enabled' => (bool) $wallet->auto_top_up_enabled,
+                    'auto_top_up_amount' => (float) $wallet->auto_top_up_amount,
+                ],
+                'venue' => [
+                    'category' => $venue->category,
+                    'offer_enabled' => (bool) $venue->offer_enabled,
+                    'offer_value' => (float) ($venue->offer_value ?? 0),
+                    'offer_days' => Arr::wrap($venue->offer_days),
+                    'offer_start_time' => $venue->offer_start_time ? substr((string) $venue->offer_start_time, 0, 5) : null,
+                    'offer_end_time' => $venue->offer_end_time ? substr((string) $venue->offer_end_time, 0, 5) : null,
+                    'minimum_order' => $venue->minimum_order !== null ? (float) $venue->minimum_order : null,
+                    'fulfilment_type' => $venue->fulfilment_type,
+                    'offer_type' => $venue->offer_type,
+                    'ride_trip_type' => $venue->ride_trip_type,
+                ],
+            ];
+
+            $requestedSnapshot = [
+                'merchant' => [
+                    'business_type' => $validated['business_type'],
+                ],
+                'wallet' => [
+                    'low_balance_threshold' => (float) $validated['low_balance_threshold'],
+                    'auto_top_up_enabled' => $autoTopUpEnabled,
+                    'auto_top_up_amount' => $autoTopUpAmount,
+                ],
+                'venue' => [
+                    'category' => $validated['business_type'],
+                    'offer_enabled' => (bool) $validated['offer_enabled'],
+                    'offer_value' => $voucherAmount,
+                    'offer_days' => $days,
+                    'offer_start_time' => $validated['start_time'] ?? null,
+                    'offer_end_time' => $validated['end_time'] ?? null,
+                    'minimum_order' => $validated['minimum_order'] ?? null,
+                    'fulfilment_type' => $validated['fulfilment_type'] ?? ($offerType === 'ride' ? 'venue' : null),
+                    'offer_type' => $offerType,
+                    'ride_trip_type' => $validated['ride_trip_type'] ?? null,
+                ],
+            ];
+
+            $changedFields = $this->offerSyncChangedFields($previousSnapshot, $requestedSnapshot);
+            $requiresOfferSync = ! empty($changedFields);
+
+            DB::transaction(function () use ($merchant, $wallet, $venue, $validated, $days, $offerType, $voucherAmount, $autoTopUpEnabled, $autoTopUpAmount, $urgencyEnabled, $dailyVoucherCap, $requiresOfferSync) {
+                $merchant->update([
+                    'business_type' => $validated['business_type'],
+                ]);
+
+                $wallet->update([
+                    'low_balance_threshold' => $validated['low_balance_threshold'],
+                    'auto_top_up_enabled' => $autoTopUpEnabled,
+                    'auto_top_up_amount' => $autoTopUpAmount,
+                ]);
+
+                $venue->update([
+                    'category' => $validated['business_type'],
+                    'offer_enabled' => $validated['offer_enabled'],
+                    'offer_value' => $voucherAmount,
+                    'offer_days' => $days,
+                    'offer_start_time' => $validated['start_time'] ?? null,
+                    'offer_end_time' => $validated['end_time'] ?? null,
+                    'minimum_order' => $validated['minimum_order'] ?? null,
+                    'fulfilment_type' => $validated['fulfilment_type'] ?? ($offerType === 'ride' ? 'venue' : null),
+                    'offer_review_status' => $requiresOfferSync ? 'pending_sync' : 'live',
+                    'offer_type' => $offerType,
+                    'ride_trip_type' => $validated['ride_trip_type'] ?? null,
+                    'urgency_enabled' => $urgencyEnabled,
+                    'daily_voucher_cap' => $dailyVoucherCap,
+                ]);
+            });
+            if ($requiresOfferSync) {
+                $this->offerSyncService->createOrReplacePendingRequest(
+                    $merchant->fresh(['wallet']),
+                    $venue->fresh(),
+                    $wallet->fresh(),
+                    $request->user(),
+                    $previousSnapshot,
+                    $requestedSnapshot,
+                    $changedFields
+                );
+            }
+
+            DB::commit();
+
+            return response()->json([
+                'success' => true,
+                'status_code' => 200,
+                'message' => $requiresOfferSync
+                    ? 'Offer settings saved locally and queued for Uber for Business sync review.'
+                    : 'Offer settings saved successfully.',
+                'data' => $this->offerPayload($merchant->fresh(['wallet', 'venues']), $venue->fresh()),
+            ], 200);
+        
+        } catch (\Exception $e) {
+            if (DB::transactionLevel() > 0) {
+                DB::rollBack();
+            }
+
+            return response()->json([
+                'success' => false,
+                'status_code' => 500,
+                'message' => 'Something went wrong. ' . $e->getMessage(),
+            ], 500);
         }
-
-        $minimumTopUpAmount = $this->merchantBusinessRuleService->minimumTopUpAmount();
-        $autoTopUpEnabled = (bool) ($validated['auto_top_up_enabled'] ?? false);
-        $autoTopUpAmount = (float) ($validated['auto_top_up_amount'] ?? ($wallet->auto_top_up_amount ?? $minimumTopUpAmount));
-
-        if ($autoTopUpEnabled && $autoTopUpAmount < $minimumTopUpAmount) {
-            return $this->error(sprintf('Auto top-up amount must be at least £%.2f.', $minimumTopUpAmount), 422, [
-                'auto_top_up_amount' => [sprintf('Auto top-up amount must be at least £%.2f.', $minimumTopUpAmount)],
-            ]);
-        }
-
-        $urgencyEnabled = (bool) ($validated['urgency_enabled'] ?? ($venue->urgency_enabled ?? config('talktocas.urgency.enabled', true)));
-        $dailyVoucherCap = $urgencyEnabled
-            ? (int) (($validated['daily_voucher_cap'] ?? $venue->daily_voucher_cap) ?: config('talktocas.urgency.default_daily_cap', 5))
-            : null;
-
-        if (! OfferRules::offerTypeSupportsFood($offerType)) {
-            $validated['minimum_order'] = null;
-            $validated['fulfilment_type'] = 'venue';
-        }
-
-        if (OfferRules::offerTypeSupportsFood($offerType) && blank($validated['minimum_order'] ?? null)) {
-            $validated['minimum_order'] = 25;
-        }
-
-        if (OfferRules::offerTypeSupportsFood($offerType) && blank($validated['fulfilment_type'] ?? null)) {
-            $validated['fulfilment_type'] = 'collection';
-        }
-
-        $days = collect($validated['offer_days'])
-            ->map(fn ($day) => strtolower(trim($day)))
-            ->unique()
-            ->values()
-            ->all();
-
-        $previousSnapshot = [
-            'merchant' => [
-                'business_type' => $merchant->business_type,
-            ],
-            'wallet' => [
-                'low_balance_threshold' => (float) $wallet->low_balance_threshold,
-                'auto_top_up_enabled' => (bool) $wallet->auto_top_up_enabled,
-                'auto_top_up_amount' => (float) $wallet->auto_top_up_amount,
-            ],
-            'venue' => [
-                'category' => $venue->category,
-                'offer_enabled' => (bool) $venue->offer_enabled,
-                'offer_value' => (float) ($venue->offer_value ?? 0),
-                'offer_days' => Arr::wrap($venue->offer_days),
-                'offer_start_time' => $venue->offer_start_time ? substr((string) $venue->offer_start_time, 0, 5) : null,
-                'offer_end_time' => $venue->offer_end_time ? substr((string) $venue->offer_end_time, 0, 5) : null,
-                'minimum_order' => $venue->minimum_order !== null ? (float) $venue->minimum_order : null,
-                'fulfilment_type' => $venue->fulfilment_type,
-                'offer_type' => $venue->offer_type,
-                'ride_trip_type' => $venue->ride_trip_type,
-            ],
-        ];
-
-        $requestedSnapshot = [
-            'merchant' => [
-                'business_type' => $validated['business_type'],
-            ],
-            'wallet' => [
-                'low_balance_threshold' => (float) $validated['low_balance_threshold'],
-                'auto_top_up_enabled' => $autoTopUpEnabled,
-                'auto_top_up_amount' => $autoTopUpAmount,
-            ],
-            'venue' => [
-                'category' => $validated['business_type'],
-                'offer_enabled' => (bool) $validated['offer_enabled'],
-                'offer_value' => $voucherAmount,
-                'offer_days' => $days,
-                'offer_start_time' => $validated['start_time'] ?? null,
-                'offer_end_time' => $validated['end_time'] ?? null,
-                'minimum_order' => $validated['minimum_order'] ?? null,
-                'fulfilment_type' => $validated['fulfilment_type'] ?? ($offerType === 'ride' ? 'venue' : null),
-                'offer_type' => $offerType,
-                'ride_trip_type' => $validated['ride_trip_type'] ?? null,
-            ],
-        ];
-
-        $changedFields = $this->offerSyncChangedFields($previousSnapshot, $requestedSnapshot);
-        $requiresOfferSync = ! empty($changedFields);
-
-        DB::transaction(function () use ($merchant, $wallet, $venue, $validated, $days, $offerType, $voucherAmount, $autoTopUpEnabled, $autoTopUpAmount, $urgencyEnabled, $dailyVoucherCap, $requiresOfferSync) {
-            $merchant->update([
-                'business_type' => $validated['business_type'],
-            ]);
-
-            $wallet->update([
-                'low_balance_threshold' => $validated['low_balance_threshold'],
-                'auto_top_up_enabled' => $autoTopUpEnabled,
-                'auto_top_up_amount' => $autoTopUpAmount,
-            ]);
-
-            $venue->update([
-                'category' => $validated['business_type'],
-                'offer_enabled' => $validated['offer_enabled'],
-                'offer_value' => $voucherAmount,
-                'offer_days' => $days,
-                'offer_start_time' => $validated['start_time'] ?? null,
-                'offer_end_time' => $validated['end_time'] ?? null,
-                'minimum_order' => $validated['minimum_order'] ?? null,
-                'fulfilment_type' => $validated['fulfilment_type'] ?? ($offerType === 'ride' ? 'venue' : null),
-                'offer_review_status' => $requiresOfferSync ? 'pending_sync' : 'live',
-                'offer_type' => $offerType,
-                'ride_trip_type' => $validated['ride_trip_type'] ?? null,
-                'urgency_enabled' => $urgencyEnabled,
-                'daily_voucher_cap' => $dailyVoucherCap,
-            ]);
-        });
-
-        if ($requiresOfferSync) {
-            $this->offerSyncService->createOrReplacePendingRequest(
-                $merchant->fresh(['wallet']),
-                $venue->fresh(),
-                $wallet->fresh(),
-                $request->user(),
-                $previousSnapshot,
-                $requestedSnapshot,
-                $changedFields
-            );
-        }
-
-        return $this->success(
-            $this->offerPayload($merchant->fresh(['wallet', 'venues']), $venue->fresh()),
-            $requiresOfferSync
-                ? 'Offer settings saved locally and queued for Uber for Business sync review.'
-                : 'Offer settings saved successfully.'
-        );
     }
 
     public function venueProfile(Request $request)
     {
-        $merchant = $this->merchantForUser($request);
-        $venue = $this->primaryVenueForMerchant($merchant);
+        try {
+            $merchant = $this->merchantForUser($request);
+            $venue = $this->primaryVenueForMerchant($merchant);
 
-        return $this->success($this->venuePayload($merchant, $venue));
+            return response()->json([
+                'success' => true,
+                'status_code' => 200,
+                'message' => 'Operation completed successfully',
+                'data' => $this->venuePayload($merchant, $venue),
+            ], 200);
+        
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'status_code' => 500,
+                'message' => 'Something went wrong. ' . $e->getMessage(),
+            ], 500);
+        }
     }
 
     public function updateVenueProfile(Request $request)
     {
-        $merchant = $this->merchantForUser($request);
-        $venue = $this->primaryVenueForMerchant($merchant);
+        try {
+            DB::beginTransaction();
 
-        $validated = $request->validate([
-            'business_name' => ['required', 'string', 'max:255'],
-            'business_type' => ['required', 'in:club,bar,restaurant,takeaway,cafe'],
-            'venue_name' => ['required', 'string', 'max:255'],
-            'address' => ['nullable', 'string', 'max:255'],
-            'city' => ['nullable', 'string', 'max:120'],
-            'postcode' => ['required', 'string', 'max:16'],
-            'latitude' => ['nullable', 'numeric', 'between:-90,90'],
-            'longitude' => ['nullable', 'numeric', 'between:-180,180'],
-            'description' => ['nullable', 'string', 'max:1200'],
-        ]);
+            $merchant = $this->merchantForUser($request);
+            $venue = $this->primaryVenueForMerchant($merchant);
 
-        $postcode = strtoupper(trim($validated['postcode']));
-        $latitude = isset($validated['latitude']) ? (float) $validated['latitude'] : null;
-        $longitude = isset($validated['longitude']) ? (float) $validated['longitude'] : null;
+            $validated = $request->validate([
+                'business_name' => ['required', 'string', 'max:255'],
+                'business_type' => ['required', 'in:club,bar,restaurant,takeaway,cafe'],
+                'venue_name' => ['required', 'string', 'max:255'],
+                'address' => ['nullable', 'string', 'max:255'],
+                'city' => ['nullable', 'string', 'max:120'],
+                'postcode' => ['required', 'string', 'max:16'],
+                'latitude' => ['nullable', 'numeric', 'between:-90,90'],
+                'longitude' => ['nullable', 'numeric', 'between:-180,180'],
+                'description' => ['nullable', 'string', 'max:1200'],
+            ]);
 
-        if (($latitude === null || $longitude === null) && $this->weatherService->enabled()) {
-            $geo = $this->weatherService->geocodePostcode($postcode);
-            if ($geo) {
-                $latitude = $latitude ?? (float) $geo['latitude'];
-                $longitude = $longitude ?? (float) $geo['longitude'];
+            $postcode = strtoupper(trim($validated['postcode']));
+            $latitude = isset($validated['latitude']) ? (float) $validated['latitude'] : null;
+            $longitude = isset($validated['longitude']) ? (float) $validated['longitude'] : null;
+
+            if (($latitude === null || $longitude === null) && $this->weatherService->enabled()) {
+                $geo = $this->weatherService->geocodePostcode($postcode);
+                if ($geo) {
+                    $latitude = $latitude ?? (float) $geo['latitude'];
+                    $longitude = $longitude ?? (float) $geo['longitude'];
+                }
             }
-        }
 
-        $addressHasChanged = $this->addressHasChanged($venue, [
-            'address' => $validated['address'] ?? null,
-            'city' => $validated['city'] ?? null,
-            'postcode' => $postcode,
-            'latitude' => $latitude,
-            'longitude' => $longitude,
-        ]);
-
-        DB::transaction(function () use ($merchant, $venue, $validated) {
-            $merchant->update([
-                'business_name' => $validated['business_name'],
-                'business_type' => $validated['business_type'],
+            $addressHasChanged = $this->addressHasChanged($venue, [
+                'address' => $validated['address'] ?? null,
+                'city' => $validated['city'] ?? null,
+                'postcode' => $postcode,
+                'latitude' => $latitude,
+                'longitude' => $longitude,
             ]);
 
-            $venue->update([
-                'name' => $validated['venue_name'],
-                'category' => $validated['business_type'],
-                'description' => $validated['description'] ?? null,
-            ]);
-        });
+            DB::transaction(function () use ($merchant, $venue, $validated) {
+                $merchant->update([
+                    'business_name' => $validated['business_name'],
+                    'business_type' => $validated['business_type'],
+                ]);
 
-        if ($addressHasChanged) {
-            $requestRecord = $this->addressApprovalService->createOrReplacePendingRequest(
-                $merchant->fresh(['wallet']),
-                $venue->fresh(),
-                $request->user(),
-                [
-                    'address' => $venue->address,
-                    'city' => $venue->city,
-                    'postcode' => $venue->postcode,
-                    'latitude' => $venue->latitude !== null ? (float) $venue->latitude : null,
-                    'longitude' => $venue->longitude !== null ? (float) $venue->longitude : null,
-                ],
-                [
-                    'address' => $validated['address'] ?? null,
-                    'city' => $validated['city'] ?? null,
-                    'postcode' => $postcode,
-                    'latitude' => $latitude,
-                    'longitude' => $longitude,
-                ],
-                (string) config('talktocas.merchant_rules.address_change_support_message')
-            );
+                $venue->update([
+                    'name' => $validated['venue_name'],
+                    'category' => $validated['business_type'],
+                    'description' => $validated['description'] ?? null,
+                ]);
+            });
+            if ($addressHasChanged) {
+                $requestRecord = $this->addressApprovalService->createOrReplacePendingRequest(
+                    $merchant->fresh(['wallet']),
+                    $venue->fresh(),
+                    $request->user(),
+                    [
+                        'address' => $venue->address,
+                        'city' => $venue->city,
+                        'postcode' => $venue->postcode,
+                        'latitude' => $venue->latitude !== null ? (float) $venue->latitude : null,
+                        'longitude' => $venue->longitude !== null ? (float) $venue->longitude : null,
+                    ],
+                    [
+                        'address' => $validated['address'] ?? null,
+                        'city' => $validated['city'] ?? null,
+                        'postcode' => $postcode,
+                        'latitude' => $latitude,
+                        'longitude' => $longitude,
+                    ],
+                    (string) config('talktocas.merchant_rules.address_change_support_message')
+                );
 
-            return $this->success(
-                $this->venuePayload($merchant->fresh(['wallet', 'venues']), $venue->fresh()),
-                $requestRecord->support_message ?? 'Address change request submitted successfully.'
-            );
+                DB::commit();
+
+                return response()->json([
+                    'success' => true,
+                    'status_code' => 200,
+                    'message' => $requestRecord->support_message ?? 'Address change request submitted successfully.',
+                    'data' => $this->venuePayload($merchant->fresh(['wallet', 'venues']), $venue->fresh()),
+                ], 200);
+            }
+
+            DB::commit();
+
+            return response()->json([
+                'success' => true,
+                'status_code' => 200,
+                'message' => 'Venue profile saved successfully.',
+                'data' => $this->venuePayload($merchant->fresh(['wallet', 'venues']), $venue->fresh()),
+            ], 200);
+        
+        } catch (\Exception $e) {
+            if (DB::transactionLevel() > 0) {
+                DB::rollBack();
+            }
+
+            return response()->json([
+                'success' => false,
+                'status_code' => 500,
+                'message' => 'Something went wrong. ' . $e->getMessage(),
+            ], 500);
         }
-
-        return $this->success(
-            $this->venuePayload($merchant->fresh(['wallet', 'venues']), $venue->fresh()),
-            'Venue profile saved successfully.'
-        );
     }
 
     public function venues(Request $request)
     {
-        $merchant = $this->merchantForUser($request);
-        $status = strtolower((string) $request->query('status', 'all'));
-        $category = strtolower((string) $request->query('category', ''));
-        $search = trim((string) $request->query('search', $request->query('q', '')));
+        try {
+            $merchant = $this->merchantForUser($request);
+            $status = strtolower((string) $request->query('status', 'all'));
+            $category = strtolower((string) $request->query('category', ''));
+            $search = trim((string) $request->query('search', $request->query('q', '')));
 
-        $query = $merchant->venues()
-            ->when($status !== '' && $status !== 'all', function ($query) use ($status) {
-                $query->where('approval_status', $status);
-            })
-            ->when($category !== '' && $category !== 'all', function ($query) use ($category) {
-                $query->where('category', $category);
-            })
-            ->when($search !== '', function ($query) use ($search) {
-                $like = '%' . $search . '%';
-                $query->where(function ($inner) use ($like) {
-                    $inner->where('name', 'like', $like)
-                        ->orWhere('city', 'like', $like)
-                        ->orWhere('postcode', 'like', $like)
-                        ->orWhere('venue_code', 'like', $like);
-                });
-            })
-            ->orderByRaw("CASE WHEN approval_status = 'approved' THEN 0 WHEN approval_status = 'pending' THEN 1 ELSE 2 END")
-            ->orderBy('name');
+            $query = $merchant->venues()
+                ->when($status !== '' && $status !== 'all', function ($query) use ($status) {
+                    $query->where('approval_status', $status);
+                })
+                ->when($category !== '' && $category !== 'all', function ($query) use ($category) {
+                    $query->where('category', $category);
+                })
+                ->when($search !== '', function ($query) use ($search) {
+                    $like = '%' . $search . '%';
+                    $query->where(function ($inner) use ($like) {
+                        $inner->where('name', 'like', $like)
+                            ->orWhere('city', 'like', $like)
+                            ->orWhere('postcode', 'like', $like)
+                            ->orWhere('venue_code', 'like', $like);
+                    });
+                })
+                ->orderByRaw("CASE WHEN approval_status = 'approved' THEN 0 WHEN approval_status = 'pending' THEN 1 ELSE 2 END")
+                ->orderBy('name');
 
-        if (! $this->shouldPaginate($request)) {
-            return $this->success(
-                $query->get()
-                    ->map(fn (Venue $venue) => $this->venueRecordPayload($venue))
-                    ->values()
-            );
+            if (! $this->shouldPaginate($request)) {
+                return response()->json([
+                    'success' => true,
+                    'status_code' => 200,
+                    'message' => 'Operation completed successfully',
+                    'data' => $query->get()
+                        ->map(fn (Venue $venue) => $this->venueRecordPayload($venue))
+                        ->values(),
+                ], 200);
+            }
+
+            $paginator = $query->paginate($this->boundedPerPage($request))->withQueryString();
+
+            return response()->json([
+                'success' => true,
+                'status_code' => 200,
+                'message' => 'Operation completed successfully',
+                'data' => [
+                        'summary' => $this->venueSummaryForMerchant($merchant),
+                        'items' => $paginator->getCollection()
+                            ->map(fn (Venue $venue) => $this->venueRecordPayload($venue))
+                            ->values(),
+                        'meta' => $this->paginationMeta($paginator),
+                        'filters' => [
+                            'status' => $status,
+                            'category' => $category ?: 'all',
+                            'search' => $search,
+                        ],
+                    ],
+            ], 200);
+        
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'status_code' => 500,
+                'message' => 'Something went wrong. ' . $e->getMessage(),
+            ], 500);
         }
-
-        $paginator = $query->paginate($this->boundedPerPage($request))->withQueryString();
-
-        return $this->success([
-            'summary' => $this->venueSummaryForMerchant($merchant),
-            'items' => $paginator->getCollection()
-                ->map(fn (Venue $venue) => $this->venueRecordPayload($venue))
-                ->values(),
-            'meta' => $this->paginationMeta($paginator),
-            'filters' => [
-                'status' => $status,
-                'category' => $category ?: 'all',
-                'search' => $search,
-            ],
-        ]);
     }
 
     public function createVenue(Request $request)
     {
-        $merchant = $this->merchantForUser($request);
-        $validated = $this->validateVenuePayload($request);
+        try {
+            DB::beginTransaction();
 
-        $venue = $merchant->venues()->create(array_merge(
-            $this->normalisedVenuePayload($validated),
-            [
-                'is_active' => false,
-                'approval_status' => 'pending',
-                'submitted_for_approval_at' => now(),
-                'offer_enabled' => false,
-                'offer_value' => $this->isFoodBusiness($validated['category']) ? 5 : 5,
-                'offer_days' => ['friday', 'saturday'],
-                'offer_start_time' => '18:00:00',
-                'offer_end_time' => '23:59:00',
-                'minimum_order' => $this->isFoodBusiness($validated['category']) ? 25 : null,
-                'fulfilment_type' => $this->isFoodBusiness($validated['category']) ? 'delivery' : 'venue',
-                'offer_review_status' => 'draft',
-                'offer_type' => $this->isFoodBusiness($validated['category']) ? 'food' : 'ride',
-            ]
-        ));
+            $merchant = $this->merchantForUser($request);
+            $validated = $this->validateVenuePayload($request);
 
-        return $this->success([
-            'venue' => $this->venueRecordPayload($venue->fresh()),
-        ], 'Venue submitted for admin approval.', 201);
+            $venue = $merchant->venues()->create(array_merge(
+                $this->normalisedVenuePayload($validated),
+                [
+                    'is_active' => false,
+                    'approval_status' => 'pending',
+                    'submitted_for_approval_at' => now(),
+                    'offer_enabled' => false,
+                    'offer_value' => $this->isFoodBusiness($validated['category']) ? 5 : 5,
+                    'offer_days' => ['friday', 'saturday'],
+                    'offer_start_time' => '18:00:00',
+                    'offer_end_time' => '23:59:00',
+                    'minimum_order' => $this->isFoodBusiness($validated['category']) ? 25 : null,
+                    'fulfilment_type' => $this->isFoodBusiness($validated['category']) ? 'delivery' : 'venue',
+                    'offer_review_status' => 'draft',
+                    'offer_type' => $this->isFoodBusiness($validated['category']) ? 'food' : 'ride',
+                ]
+            ));
+
+            DB::commit();
+
+            return response()->json([
+                'success' => true,
+                'status_code' => 201,
+                'message' => 'Venue submitted for admin approval.',
+                'data' => [
+                        'venue' => $this->venueRecordPayload($venue->fresh()),
+                    ],
+            ], 201);
+        
+        } catch (\Exception $e) {
+            if (DB::transactionLevel() > 0) {
+                DB::rollBack();
+            }
+
+            return response()->json([
+                'success' => false,
+                'status_code' => 500,
+                'message' => 'Something went wrong. ' . $e->getMessage(),
+            ], 500);
+        }
     }
 
     public function updateVenue(Request $request, Venue $venue)
     {
-        $merchant = $this->merchantForUser($request);
+        try {
+            DB::beginTransaction();
 
-        if ((int) $venue->merchant_id !== (int) $merchant->id) {
-            return $this->error('Venue does not belong to this merchant.', 403);
-        }
+            $merchant = $this->merchantForUser($request);
 
-        $validated = $this->validateVenuePayload($request);
+            if ((int) $venue->merchant_id !== (int) $merchant->id) {
+                DB::rollBack();
 
-        $locationChanged = $this->addressHasChanged($venue, [
-            'address' => $validated['address'] ?? null,
-            'city' => $validated['city'] ?? null,
-            'postcode' => strtoupper(trim($validated['postcode'])),
-            'latitude' => $validated['latitude'] ?? null,
-            'longitude' => $validated['longitude'] ?? null,
-        ]);
+                return response()->json([
+                    'success' => false,
+                    'status_code' => 403,
+                    'message' => 'Venue does not belong to this merchant.',
+                ], 403);
+            }
 
-        $updates = $this->normalisedVenuePayload($validated);
+            $validated = $this->validateVenuePayload($request);
 
-        if ($venue->approval_status !== 'approved' || $locationChanged) {
-            $updates = array_merge($updates, [
-                'is_active' => false,
-                'approval_status' => 'pending',
-                'submitted_for_approval_at' => now(),
-                'rejected_at' => null,
-                'rejection_reason' => null,
+            $locationChanged = $this->addressHasChanged($venue, [
+                'address' => $validated['address'] ?? null,
+                'city' => $validated['city'] ?? null,
+                'postcode' => strtoupper(trim($validated['postcode'])),
+                'latitude' => $validated['latitude'] ?? null,
+                'longitude' => $validated['longitude'] ?? null,
             ]);
+
+            $updates = $this->normalisedVenuePayload($validated);
+
+            if ($venue->approval_status !== 'approved' || $locationChanged) {
+                $updates = array_merge($updates, [
+                    'is_active' => false,
+                    'approval_status' => 'pending',
+                    'submitted_for_approval_at' => now(),
+                    'rejected_at' => null,
+                    'rejection_reason' => null,
+                ]);
+            }
+
+            $venue->update($updates);
+
+            DB::commit();
+
+            return response()->json([
+                'success' => true,
+                'status_code' => 200,
+                'message' => $venue->approval_status === 'approved' && ! $locationChanged
+                    ? 'Venue information updated successfully.'
+                    : 'Venue updated and sent for admin approval.',
+                'data' => [
+                        'venue' => $this->venueRecordPayload($venue->fresh()),
+                    ],
+            ], 200);
+        
+        } catch (\Exception $e) {
+            if (DB::transactionLevel() > 0) {
+                DB::rollBack();
+            }
+
+            return response()->json([
+                'success' => false,
+                'status_code' => 500,
+                'message' => 'Something went wrong. ' . $e->getMessage(),
+            ], 500);
         }
-
-        $venue->update($updates);
-
-        return $this->success([
-            'venue' => $this->venueRecordPayload($venue->fresh()),
-        ], $venue->approval_status === 'approved' && ! $locationChanged
-            ? 'Venue information updated successfully.'
-            : 'Venue updated and sent for admin approval.'
-        );
     }
 
     public function deleteVenue(Request $request, Venue $venue)
     {
-        $merchant = $this->merchantForUser($request);
+        try {
+            DB::beginTransaction();
 
-        if ((int) $venue->merchant_id !== (int) $merchant->id) {
-            return $this->error('Venue does not belong to this merchant.', 403);
+            $merchant = $this->merchantForUser($request);
+
+            if ((int) $venue->merchant_id !== (int) $merchant->id) {
+                DB::rollBack();
+
+                return response()->json([
+                    'success' => false,
+                    'status_code' => 403,
+                    'message' => 'Venue does not belong to this merchant.',
+                ], 403);
+            }
+
+            if ($venue->vouchers()->exists()) {
+                DB::rollBack();
+
+                return response()->json([
+                    'success' => false,
+                    'status_code' => 422,
+                    'message' => 'This venue has voucher history and cannot be deleted.',
+                ], 422);
+            }
+
+            if ($venue->approval_status === 'approved') {
+                DB::rollBack();
+
+                return response()->json([
+                    'success' => false,
+                    'status_code' => 422,
+                    'message' => 'Approved venues cannot be deleted from the merchant dashboard. Ask admin to deactivate it.',
+                ], 422);
+            }
+
+            $venue->delete();
+
+            DB::commit();
+
+            return response()->json([
+                'success' => true,
+                'status_code' => 200,
+                'message' => 'Venue removed successfully.',
+                'data' => [],
+            ], 200);
+        
+        } catch (\Exception $e) {
+            if (DB::transactionLevel() > 0) {
+                DB::rollBack();
+            }
+
+            return response()->json([
+                'success' => false,
+                'status_code' => 500,
+                'message' => 'Something went wrong. ' . $e->getMessage(),
+            ], 500);
         }
-
-        if ($venue->vouchers()->exists()) {
-            return $this->error('This venue has voucher history and cannot be deleted.', 422);
-        }
-
-        if ($venue->approval_status === 'approved') {
-            return $this->error('Approved venues cannot be deleted from the merchant dashboard. Ask admin to deactivate it.', 422);
-        }
-
-        $venue->delete();
-
-        return $this->success([], 'Venue removed successfully.');
     }
 
     public function walletTransactions(Request $request)
     {
-        $merchant = $this->merchantForUser($request);
-        $type = strtolower((string) $request->query('type', 'all'));
-        $search = trim((string) $request->query('search', $request->query('q', '')));
+        try {
+            $merchant = $this->merchantForUser($request);
+            $type = strtolower((string) $request->query('type', 'all'));
+            $search = trim((string) $request->query('search', $request->query('q', '')));
 
-        $query = WalletTransaction::query()
-            ->where('merchant_id', $merchant->id)
-            ->when($type !== '' && $type !== 'all', function ($query) use ($type) {
-                $query->where('type', $type);
-            })
-            ->when($search !== '', function ($query) use ($search) {
-                $like = '%' . $search . '%';
-                $query->where(function ($inner) use ($like) {
-                    $inner->where('reference', 'like', $like)
-                        ->orWhere('notes', 'like', $like)
-                        ->orWhere('type', 'like', $like);
-                });
-            })
-            ->latest();
+            $query = WalletTransaction::query()
+                ->where('merchant_id', $merchant->id)
+                ->when($type !== '' && $type !== 'all', function ($query) use ($type) {
+                    $query->where('type', $type);
+                })
+                ->when($search !== '', function ($query) use ($search) {
+                    $like = '%' . $search . '%';
+                    $query->where(function ($inner) use ($like) {
+                        $inner->where('reference', 'like', $like)
+                            ->orWhere('notes', 'like', $like)
+                            ->orWhere('type', 'like', $like);
+                    });
+                })
+                ->latest();
 
-        if (! $this->shouldPaginate($request)) {
-            return $this->success($query->get());
+            if (! $this->shouldPaginate($request)) {
+                return response()->json([
+                    'success' => true,
+                    'status_code' => 200,
+                    'message' => 'Operation completed successfully',
+                    'data' => $query->get(),
+                ], 200);
+            }
+
+            $paginator = $query->paginate($this->boundedPerPage($request))->withQueryString();
+
+            return response()->json([
+                'success' => true,
+                'status_code' => 200,
+                'message' => 'Operation completed successfully',
+                'data' => [
+                        'summary' => $this->walletTransactionSummaryForMerchant($merchant),
+                        'items' => $paginator->getCollection()->values(),
+                        'meta' => $this->paginationMeta($paginator),
+                        'filters' => [
+                            'type' => $type,
+                            'search' => $search,
+                        ],
+                    ],
+            ], 200);
+        
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'status_code' => 500,
+                'message' => 'Something went wrong. ' . $e->getMessage(),
+            ], 500);
         }
-
-        $paginator = $query->paginate($this->boundedPerPage($request))->withQueryString();
-
-        return $this->success([
-            'summary' => $this->walletTransactionSummaryForMerchant($merchant),
-            'items' => $paginator->getCollection()->values(),
-            'meta' => $this->paginationMeta($paginator),
-            'filters' => [
-                'type' => $type,
-                'search' => $search,
-            ],
-        ]);
     }
 
     public function vouchers(Request $request)
     {
-        $merchant = $this->merchantForUser($request);
-        $status = strtolower((string) $request->query('status', 'all'));
-        $journeyType = strtolower((string) $request->query('journey_type', 'all'));
-        $search = trim((string) $request->query('search', $request->query('q', '')));
+        try {
+            $merchant = $this->merchantForUser($request);
+            $status = strtolower((string) $request->query('status', 'all'));
+            $journeyType = strtolower((string) $request->query('journey_type', 'all'));
+            $search = trim((string) $request->query('search', $request->query('q', '')));
 
-        $query = Voucher::query()
-            ->with(['venue', 'user'])
-            ->where('merchant_id', $merchant->id)
-            ->when($status !== '' && $status !== 'all', function ($query) use ($status) {
-                $query->where('status', $status);
-            })
-            ->when($journeyType !== '' && $journeyType !== 'all', function ($query) use ($journeyType) {
-                $query->where('journey_type', $journeyType);
-            })
-            ->when($search !== '', function ($query) use ($search) {
-                $like = '%' . $search . '%';
-                $query->where(function ($inner) use ($like) {
-                    $inner->where('code', 'like', $like)
-                        ->orWhere('provider_name', 'like', $like)
-                        ->orWhereHas('venue', function ($venueQuery) use ($like) {
-                            $venueQuery->where('name', 'like', $like)
-                                ->orWhere('postcode', 'like', $like)
-                                ->orWhere('venue_code', 'like', $like);
-                        })
-                        ->orWhereHas('user', function ($userQuery) use ($like) {
-                            $userQuery->where('name', 'like', $like)
-                                ->orWhere('email', 'like', $like)
-                                ->orWhere('phone', 'like', $like);
-                        });
-                });
-            })
-            ->latest();
+            $query = Voucher::query()
+                ->with(['venue', 'user'])
+                ->where('merchant_id', $merchant->id)
+                ->when($status !== '' && $status !== 'all', function ($query) use ($status) {
+                    $query->where('status', $status);
+                })
+                ->when($journeyType !== '' && $journeyType !== 'all', function ($query) use ($journeyType) {
+                    $query->where('journey_type', $journeyType);
+                })
+                ->when($search !== '', function ($query) use ($search) {
+                    $like = '%' . $search . '%';
+                    $query->where(function ($inner) use ($like) {
+                        $inner->where('code', 'like', $like)
+                            ->orWhere('provider_name', 'like', $like)
+                            ->orWhereHas('venue', function ($venueQuery) use ($like) {
+                                $venueQuery->where('name', 'like', $like)
+                                    ->orWhere('postcode', 'like', $like)
+                                    ->orWhere('venue_code', 'like', $like);
+                            })
+                            ->orWhereHas('user', function ($userQuery) use ($like) {
+                                $userQuery->where('name', 'like', $like)
+                                    ->orWhere('email', 'like', $like)
+                                    ->orWhere('phone', 'like', $like);
+                            });
+                    });
+                })
+                ->latest();
 
-        if (! $this->shouldPaginate($request)) {
-            return $this->success($query->get());
+            if (! $this->shouldPaginate($request)) {
+                return response()->json([
+                    'success' => true,
+                    'status_code' => 200,
+                    'message' => 'Operation completed successfully',
+                    'data' => $query->get(),
+                ], 200);
+            }
+
+            $paginator = $query->paginate($this->boundedPerPage($request))->withQueryString();
+
+            return response()->json([
+                'success' => true,
+                'status_code' => 200,
+                'message' => 'Operation completed successfully',
+                'data' => [
+                        'summary' => $this->voucherSummaryForMerchant($merchant),
+                        'items' => $paginator->getCollection()->values(),
+                        'meta' => $this->paginationMeta($paginator),
+                        'filters' => [
+                            'status' => $status,
+                            'journey_type' => $journeyType,
+                            'search' => $search,
+                        ],
+                    ],
+            ], 200);
+        
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'status_code' => 500,
+                'message' => 'Something went wrong. ' . $e->getMessage(),
+            ], 500);
         }
-
-        $paginator = $query->paginate($this->boundedPerPage($request))->withQueryString();
-
-        return $this->success([
-            'summary' => $this->voucherSummaryForMerchant($merchant),
-            'items' => $paginator->getCollection()->values(),
-            'meta' => $this->paginationMeta($paginator),
-            'filters' => [
-                'status' => $status,
-                'journey_type' => $journeyType,
-                'search' => $search,
-            ],
-        ]);
     }
 
     public function createVoucher(Request $request)
     {
-        $merchant = $this->merchantForUser($request);
-        $wallet = $merchant->wallet;
-        $venue = $this->primaryVenueForMerchant($merchant);
+        try {
+            DB::beginTransaction();
 
-        if (! $venue) {
-            return $this->error('No venue found for this merchant.', 422);
-        }
+            $merchant = $this->merchantForUser($request);
+            $wallet = $merchant->wallet;
+            $venue = $this->primaryVenueForMerchant($merchant);
 
-        if (! $venue->is_active || $venue->approval_status !== 'approved') {
-            return $this->error('This venue is still waiting for admin approval.', 422, [
-                'venue_status' => $venue->approval_status ?: 'pending',
+            if (! $venue) {
+                DB::rollBack();
+
+                return response()->json([
+                    'success' => false,
+                    'status_code' => 422,
+                    'message' => 'No venue found for this merchant.',
+                ], 422);
+            }
+
+            if (! $venue->is_active || $venue->approval_status !== 'approved') {
+                DB::rollBack();
+
+                return response()->json([
+                    'success' => false,
+                    'status_code' => 422,
+                    'message' => 'This venue is still waiting for admin approval.',
+                    'errors' => [
+                            'venue_status' => $venue->approval_status ?: 'pending',
+                        ],
+                ], 422);
+            }
+
+            $validated = $request->validate([
+                'user_name' => ['required', 'string', 'max:255'],
+                'user_email' => ['nullable', 'email', 'max:255'],
+                'user_phone' => ['nullable', 'string', 'max:50'],
+                'journey_type' => ['required', 'in:ride,food'],
+                'voucher_value' => ['nullable', 'numeric', 'min:1', 'max:100'],
+                'promo_message' => ['nullable', 'string', 'max:80'],
             ]);
+
+            if (blank($validated['user_email'] ?? null) && blank($validated['user_phone'] ?? null)) {
+                DB::rollBack();
+
+                return response()->json([
+                    'success' => false,
+                    'status_code' => 422,
+                    'message' => 'Enter at least an email address or phone number for the customer.',
+                    'errors' => [
+                            'contact' => ['Email or phone is required.'],
+                        ],
+                ], 422);
+            }
+
+            $allowedJourneyTypes = $this->allowedJourneyTypesForVenue($venue);
+            if (! in_array($validated['journey_type'], $allowedJourneyTypes, true)) {
+                DB::rollBack();
+
+                return response()->json([
+                    'success' => false,
+                    'status_code' => 422,
+                    'message' => 'This venue offer does not support the selected voucher type.',
+                    'errors' => [
+                            'journey_type' => ['Selected journey type is not enabled for this merchant.'],
+                        ],
+                ], 422);
+            }
+
+            if (! $venue->offer_enabled) {
+                DB::rollBack();
+
+                return response()->json([
+                    'success' => false,
+                    'status_code' => 422,
+                    'message' => 'Enable the venue offer before creating vouchers.',
+                ], 422);
+            }
+
+            $voucherValue = (float) ($validated['voucher_value'] ?? $venue->offer_value ?? 5);
+            $range = OfferRules::voucherRangeForBusiness($venue->category);
+            if ($voucherValue < $range['min'] || $voucherValue > $range['max']) {
+                DB::rollBack();
+
+                return response()->json([
+                    'success' => false,
+                    'status_code' => 422,
+                    'message' => OfferRules::voucherAmountMessage($venue->category),
+                    'errors' => [
+                            'voucher_value' => [OfferRules::voucherAmountMessage($venue->category)],
+                        ],
+                ], 422);
+            }
+
+            $this->venueUrgencyService->guardAvailability($venue);
+
+            $serviceFee = (float) ($merchant->default_service_fee ?? 2.50);
+            $providerLink = $this->providerVoucherLinkService->matchActiveLink($venue, $validated['journey_type']);
+            $rideTripType = $validated['journey_type'] === 'ride' ? ($providerLink?->ride_trip_type ?? $venue->ride_trip_type) : null;
+            $totalCharge = OfferRules::requiredWalletBalanceForVoucher($voucherValue, $serviceFee, $validated['journey_type'], $rideTripType);
+
+            if ((float) $wallet->balance < $totalCharge) {
+                DB::rollBack();
+
+                return response()->json([
+                    'success' => false,
+                    'status_code' => 422,
+                    'message' => 'Insufficient wallet balance. Please top up before issuing a voucher.',
+                    'errors' => [
+                            'wallet_balance' => number_format((float) $wallet->balance, 2, '.', ''),
+                            'required_balance' => number_format($totalCharge, 2, '.', ''),
+                        ],
+                ], 422);
+            }
+
+            $customer = $this->findOrCreateVoucherCustomer($validated, $venue->postcode);
+            $promoMessage = trim((string) ($validated['promo_message'] ?? ''));
+            if ($promoMessage === '') {
+                $promoMessage = $this->defaultPromoMessage($venue->name, $validated['journey_type'], $rideTripType, $voucherValue);
+            }
+
+            $voucher = DB::transaction(function () use ($merchant, $venue, $customer, $validated, $voucherValue, $serviceFee, $totalCharge, $promoMessage, $providerLink, $rideTripType) {
+                return Voucher::create([
+                    'user_id' => $customer->id,
+                    'merchant_id' => $merchant->id,
+                    'venue_id' => $venue->id,
+                    'provider_voucher_link_id' => $providerLink?->id,
+                    'code' => 'TTC-' . strtoupper(Str::random(8)),
+                    'journey_type' => $validated['journey_type'],
+                    'provider_name' => $providerLink?->provider ?? ($validated['journey_type'] === 'food' ? 'ubereats' : 'uber'),
+                    'offer_type' => $providerLink?->offer_type ?? $venue->offer_type,
+                    'ride_trip_type' => $rideTripType,
+                    'destination_postcode' => $venue->postcode,
+                    'promo_message' => Str::limit($promoMessage, 80, ''),
+                    'voucher_value' => $voucherValue,
+                    'service_fee' => $serviceFee,
+                    'total_charge' => $totalCharge,
+                    'minimum_order' => $validated['journey_type'] === 'food'
+                        ? ($providerLink?->minimum_order !== null ? (float) $providerLink->minimum_order : ($venue->minimum_order ?? 25))
+                        : null,
+                    'status' => 'issued',
+                    'issued_at' => now(),
+                    'expires_at' => now()->addHours(4),
+                    'voucher_link_url' => $providerLink?->link_url,
+                ]);
+            });
+            $voucher->load(['venue', 'user']);
+            $this->affiliateTrackingService->markVoucherIssued($voucher->fresh(['user']));
+
+            DB::commit();
+
+            return response()->json([
+                'success' => true,
+                'status_code' => 201,
+                'message' => 'Voucher created successfully.',
+                'data' => [
+                        'voucher' => $voucher,
+                        'wallet' => $this->walletPayload($merchant->fresh(['wallet'])),
+                        'exact_link_used' => (bool) $voucher->voucher_link_url,
+                    ],
+            ], 201);
+        
+        } catch (\Exception $e) {
+            if (DB::transactionLevel() > 0) {
+                DB::rollBack();
+            }
+
+            return response()->json([
+                'success' => false,
+                'status_code' => 500,
+                'message' => 'Something went wrong. ' . $e->getMessage(),
+            ], 500);
         }
-
-        $validated = $request->validate([
-            'user_name' => ['required', 'string', 'max:255'],
-            'user_email' => ['nullable', 'email', 'max:255'],
-            'user_phone' => ['nullable', 'string', 'max:50'],
-            'journey_type' => ['required', 'in:ride,food'],
-            'voucher_value' => ['nullable', 'numeric', 'min:1', 'max:100'],
-            'promo_message' => ['nullable', 'string', 'max:80'],
-        ]);
-
-        if (blank($validated['user_email'] ?? null) && blank($validated['user_phone'] ?? null)) {
-            return $this->error('Enter at least an email address or phone number for the customer.', 422, [
-                'contact' => ['Email or phone is required.'],
-            ]);
-        }
-
-        $allowedJourneyTypes = $this->allowedJourneyTypesForVenue($venue);
-        if (! in_array($validated['journey_type'], $allowedJourneyTypes, true)) {
-            return $this->error('This venue offer does not support the selected voucher type.', 422, [
-                'journey_type' => ['Selected journey type is not enabled for this merchant.'],
-            ]);
-        }
-
-        if (! $venue->offer_enabled) {
-            return $this->error('Enable the venue offer before creating vouchers.', 422);
-        }
-
-        $voucherValue = (float) ($validated['voucher_value'] ?? $venue->offer_value ?? 5);
-        $range = OfferRules::voucherRangeForBusiness($venue->category);
-        if ($voucherValue < $range['min'] || $voucherValue > $range['max']) {
-            return $this->error(OfferRules::voucherAmountMessage($venue->category), 422, [
-                'voucher_value' => [OfferRules::voucherAmountMessage($venue->category)],
-            ]);
-        }
-
-        $this->venueUrgencyService->guardAvailability($venue);
-
-        $serviceFee = (float) ($merchant->default_service_fee ?? 2.50);
-        $providerLink = $this->providerVoucherLinkService->matchActiveLink($venue, $validated['journey_type']);
-        $rideTripType = $validated['journey_type'] === 'ride' ? ($providerLink?->ride_trip_type ?? $venue->ride_trip_type) : null;
-        $totalCharge = OfferRules::requiredWalletBalanceForVoucher($voucherValue, $serviceFee, $validated['journey_type'], $rideTripType);
-
-        if ((float) $wallet->balance < $totalCharge) {
-            return $this->error('Insufficient wallet balance. Please top up before issuing a voucher.', 422, [
-                'wallet_balance' => number_format((float) $wallet->balance, 2, '.', ''),
-                'required_balance' => number_format($totalCharge, 2, '.', ''),
-            ]);
-        }
-
-        $customer = $this->findOrCreateVoucherCustomer($validated, $venue->postcode);
-        $promoMessage = trim((string) ($validated['promo_message'] ?? ''));
-        if ($promoMessage === '') {
-            $promoMessage = $this->defaultPromoMessage($venue->name, $validated['journey_type'], $rideTripType, $voucherValue);
-        }
-
-        $voucher = DB::transaction(function () use ($merchant, $venue, $customer, $validated, $voucherValue, $serviceFee, $totalCharge, $promoMessage, $providerLink, $rideTripType) {
-            return Voucher::create([
-                'user_id' => $customer->id,
-                'merchant_id' => $merchant->id,
-                'venue_id' => $venue->id,
-                'provider_voucher_link_id' => $providerLink?->id,
-                'code' => 'TTC-' . strtoupper(Str::random(8)),
-                'journey_type' => $validated['journey_type'],
-                'provider_name' => $providerLink?->provider ?? ($validated['journey_type'] === 'food' ? 'ubereats' : 'uber'),
-                'offer_type' => $providerLink?->offer_type ?? $venue->offer_type,
-                'ride_trip_type' => $rideTripType,
-                'destination_postcode' => $venue->postcode,
-                'promo_message' => Str::limit($promoMessage, 80, ''),
-                'voucher_value' => $voucherValue,
-                'service_fee' => $serviceFee,
-                'total_charge' => $totalCharge,
-                'minimum_order' => $validated['journey_type'] === 'food'
-                    ? ($providerLink?->minimum_order !== null ? (float) $providerLink->minimum_order : ($venue->minimum_order ?? 25))
-                    : null,
-                'status' => 'issued',
-                'issued_at' => now(),
-                'expires_at' => now()->addHours(4),
-                'voucher_link_url' => $providerLink?->link_url,
-            ]);
-        });
-
-        $voucher->load(['venue', 'user']);
-        $this->affiliateTrackingService->markVoucherIssued($voucher->fresh(['user']));
-
-        return $this->success([
-            'voucher' => $voucher,
-            'wallet' => $this->walletPayload($merchant->fresh(['wallet'])),
-            'exact_link_used' => (bool) $voucher->voucher_link_url,
-        ], 'Voucher created successfully.', 201);
     }
 
     public function topUp(Request $request)
     {
-        $merchant = $this->merchantForUser($request);
-        $wallet = $merchant->wallet;
+        try {
+            DB::beginTransaction();
 
-        $validated = $request->validate([
-            'amount' => ['required', 'numeric', 'min:1'],
-        ]);
+            $merchant = $this->merchantForUser($request);
+            $wallet = $merchant->wallet;
 
-        $minimumTopUpAmount = $this->merchantBusinessRuleService->minimumTopUpAmount();
-        if ((float) $validated['amount'] < $minimumTopUpAmount) {
-            return $this->error(sprintf('Minimum top-up is £%.2f.', $minimumTopUpAmount), 422, [
-                'amount' => [sprintf('Minimum top-up is £%.2f.', $minimumTopUpAmount)],
+            $validated = $request->validate([
+                'amount' => ['required', 'numeric', 'min:1'],
             ]);
+
+            $minimumTopUpAmount = $this->merchantBusinessRuleService->minimumTopUpAmount();
+            if ((float) $validated['amount'] < $minimumTopUpAmount) {
+                DB::rollBack();
+
+                return response()->json([
+                    'success' => false,
+                    'status_code' => 422,
+                    'message' => sprintf('Minimum top-up is £%.2f.', $minimumTopUpAmount),
+                    'errors' => [
+                            'amount' => [sprintf('Minimum top-up is £%.2f.', $minimumTopUpAmount)],
+                        ],
+                ], 422);
+            }
+
+            $before = (float) $wallet->balance;
+            $after = $before + (float) $validated['amount'];
+
+            $wallet->update(['balance' => $after]);
+
+            WalletTransaction::create([
+                'merchant_id' => $merchant->id,
+                'merchant_wallet_id' => $wallet->id,
+                'type' => 'deposit',
+                'amount' => $validated['amount'],
+                'balance_before' => $before,
+                'balance_after' => $after,
+                'reference' => 'TOPUP-' . strtoupper(Str::random(6)),
+                'notes' => 'Manual top-up from merchant dashboard',
+            ]);
+
+            $freshMerchant = $merchant->fresh(['wallet']);
+
+            DB::commit();
+
+            return response()->json([
+                'success' => true,
+                'status_code' => 200,
+                'message' => 'Wallet topped up successfully',
+                'data' => [
+                        'wallet' => $this->walletPayload($freshMerchant),
+                        'alert_status' => $this->walletAlertService->statusForWallet($freshMerchant->wallet),
+                    ],
+            ], 200);
+        
+        } catch (\Exception $e) {
+            if (DB::transactionLevel() > 0) {
+                DB::rollBack();
+            }
+
+            return response()->json([
+                'success' => false,
+                'status_code' => 500,
+                'message' => 'Something went wrong. ' . $e->getMessage(),
+            ], 500);
         }
-
-        $before = (float) $wallet->balance;
-        $after = $before + (float) $validated['amount'];
-
-        $wallet->update(['balance' => $after]);
-
-        WalletTransaction::create([
-            'merchant_id' => $merchant->id,
-            'merchant_wallet_id' => $wallet->id,
-            'type' => 'deposit',
-            'amount' => $validated['amount'],
-            'balance_before' => $before,
-            'balance_after' => $after,
-            'reference' => 'TOPUP-' . strtoupper(Str::random(6)),
-            'notes' => 'Manual top-up from merchant dashboard',
-        ]);
-
-        $freshMerchant = $merchant->fresh(['wallet']);
-
-        return $this->success([
-            'wallet' => $this->walletPayload($freshMerchant),
-            'alert_status' => $this->walletAlertService->statusForWallet($freshMerchant->wallet),
-        ], 'Wallet topped up successfully');
     }
 
     public function redeemVoucher(Request $request, Voucher $voucher)
     {
-        $merchant = $this->merchantForUser($request);
+        try {
+            DB::beginTransaction();
 
-        if ((int) $voucher->merchant_id !== (int) $merchant->id) {
-            return $this->error('Voucher does not belong to this merchant', 403);
+            $merchant = $this->merchantForUser($request);
+
+            if ((int) $voucher->merchant_id !== (int) $merchant->id) {
+                DB::rollBack();
+
+                return response()->json([
+                    'success' => false,
+                    'status_code' => 403,
+                    'message' => 'Voucher does not belong to this merchant',
+                ], 403);
+            }
+
+            $eventType = $voucher->journey_type === 'food' ? 'order_completed' : 'ride_completed';
+            $result = $this->providerVerificationService->simulateEvent($voucher, $eventType, [
+                'destination_match' => $voucher->journey_type === 'food' ? null : true,
+            ]);
+
+            $freshMerchant = $merchant->fresh(['wallet']);
+
+            DB::commit();
+
+            return response()->json([
+                'success' => true,
+                'status_code' => 200,
+                'message' => 'Provider completion confirmed and wallet charged successfully.',
+                'data' => [
+                        'wallet' => $this->walletPayload($freshMerchant),
+                        'voucher' => $result['voucher'],
+                        'provider_event' => $result['event'],
+                        'low_balance_alert' => $result['low_balance_alert'],
+                    ],
+            ], 200);
+        
+        } catch (\Exception $e) {
+            if (DB::transactionLevel() > 0) {
+                DB::rollBack();
+            }
+
+            return response()->json([
+                'success' => false,
+                'status_code' => 500,
+                'message' => 'Something went wrong. ' . $e->getMessage(),
+            ], 500);
         }
-
-        $eventType = $voucher->journey_type === 'food' ? 'order_completed' : 'ride_completed';
-        $result = $this->providerVerificationService->simulateEvent($voucher, $eventType, [
-            'destination_match' => $voucher->journey_type === 'food' ? null : true,
-        ]);
-
-        $freshMerchant = $merchant->fresh(['wallet']);
-
-        return $this->success([
-            'wallet' => $this->walletPayload($freshMerchant),
-            'voucher' => $result['voucher'],
-            'provider_event' => $result['event'],
-            'low_balance_alert' => $result['low_balance_alert'],
-        ], 'Provider completion confirmed and wallet charged successfully.');
     }
 
     public function simulateProviderEvent(Request $request, Voucher $voucher)
     {
-        $merchant = $this->merchantForUser($request);
+        try {
+            DB::beginTransaction();
 
-        if ((int) $voucher->merchant_id !== (int) $merchant->id) {
-            return $this->error('Voucher does not belong to this merchant', 403);
+            $merchant = $this->merchantForUser($request);
+
+            if ((int) $voucher->merchant_id !== (int) $merchant->id) {
+                DB::rollBack();
+
+                return response()->json([
+                    'success' => false,
+                    'status_code' => 403,
+                    'message' => 'Voucher does not belong to this merchant',
+                ], 403);
+            }
+
+            if (! config('talktocas.provider_verification.allow_simulated_events', true)) {
+                DB::rollBack();
+
+                return response()->json([
+                    'success' => false,
+                    'status_code' => 403,
+                    'message' => 'Simulated provider events are disabled in this environment.',
+                ], 403);
+            }
+
+            $validated = $request->validate([
+                'event_type' => ['required', 'in:ride_completed,order_completed,order_cancelled,destination_mismatch,ride_terminated_early'],
+                'provider_reference' => ['nullable', 'string', 'max:120'],
+                'destination_match' => ['nullable', 'boolean'],
+                'notes' => ['nullable', 'string', 'max:500'],
+            ]);
+
+            $result = $this->providerVerificationService->simulateEvent($voucher, $validated['event_type'], $validated);
+
+            DB::commit();
+
+            return response()->json([
+                'success' => true,
+                'status_code' => 200,
+                'message' => 'Provider event processed successfully.',
+                'data' => [
+                        'wallet' => $this->walletPayload($merchant->fresh(['wallet'])),
+                        'voucher' => $result['voucher'],
+                        'provider_event' => $result['event'],
+                        'low_balance_alert' => $result['low_balance_alert'],
+                    ],
+            ], 200);
+        
+        } catch (\Exception $e) {
+            if (DB::transactionLevel() > 0) {
+                DB::rollBack();
+            }
+
+            return response()->json([
+                'success' => false,
+                'status_code' => 500,
+                'message' => 'Something went wrong. ' . $e->getMessage(),
+            ], 500);
         }
-
-        if (! config('talktocas.provider_verification.allow_simulated_events', true)) {
-            return $this->error('Simulated provider events are disabled in this environment.', 403);
-        }
-
-        $validated = $request->validate([
-            'event_type' => ['required', 'in:ride_completed,order_completed,order_cancelled,destination_mismatch,ride_terminated_early'],
-            'provider_reference' => ['nullable', 'string', 'max:120'],
-            'destination_match' => ['nullable', 'boolean'],
-            'notes' => ['nullable', 'string', 'max:500'],
-        ]);
-
-        $result = $this->providerVerificationService->simulateEvent($voucher, $validated['event_type'], $validated);
-
-        return $this->success([
-            'wallet' => $this->walletPayload($merchant->fresh(['wallet'])),
-            'voucher' => $result['voucher'],
-            'provider_event' => $result['event'],
-            'low_balance_alert' => $result['low_balance_alert'],
-        ], 'Provider event processed successfully.');
     }
 
     public function createStripeTopUpCheckout(Request $request)
     {
-        $merchant = $this->merchantForUser($request);
+        try {
+            DB::beginTransaction();
 
-        $validated = $request->validate([
-            'amount' => ['required', 'numeric', 'min:1'],
-            'mode' => ['nullable', 'in:manual,auto_top_up'],
-        ]);
+            $merchant = $this->merchantForUser($request);
 
-        $minimumTopUpAmount = $this->merchantBusinessRuleService->minimumTopUpAmount();
-        if ((float) $validated['amount'] < $minimumTopUpAmount) {
-            return $this->error(sprintf('Minimum top-up is £%.2f.', $minimumTopUpAmount), 422, [
-                'amount' => [sprintf('Minimum top-up is £%.2f.', $minimumTopUpAmount)],
+            $validated = $request->validate([
+                'amount' => ['required', 'numeric', 'min:1'],
+                'mode' => ['nullable', 'in:manual,auto_top_up'],
             ]);
+
+            $minimumTopUpAmount = $this->merchantBusinessRuleService->minimumTopUpAmount();
+            if ((float) $validated['amount'] < $minimumTopUpAmount) {
+                DB::rollBack();
+
+                return response()->json([
+                    'success' => false,
+                    'status_code' => 422,
+                    'message' => sprintf('Minimum top-up is £%.2f.', $minimumTopUpAmount),
+                    'errors' => [
+                            'amount' => [sprintf('Minimum top-up is £%.2f.', $minimumTopUpAmount)],
+                        ],
+                ], 422);
+            }
+
+            $intent = $this->stripeFinanceService->createTopUpIntent(
+                $merchant,
+                (float) $validated['amount'],
+                (string) ($validated['mode'] ?? 'manual')
+            );
+
+            DB::commit();
+
+            return response()->json([
+                'success' => true,
+                'status_code' => 201,
+                'message' => 'Stripe top-up checkout created successfully.',
+                'data' => [
+                        'intent' => $this->stripeFinanceService->topUpIntentPayload($intent),
+                        'stripe_finance' => $this->stripeFinanceService->merchantPayload($merchant->fresh(['wallet'])),
+                    ],
+            ], 201);
+        
+        } catch (\Exception $e) {
+            if (DB::transactionLevel() > 0) {
+                DB::rollBack();
+            }
+
+            return response()->json([
+                'success' => false,
+                'status_code' => 500,
+                'message' => 'Something went wrong. ' . $e->getMessage(),
+            ], 500);
         }
-
-        $intent = $this->stripeFinanceService->createTopUpIntent(
-            $merchant,
-            (float) $validated['amount'],
-            (string) ($validated['mode'] ?? 'manual')
-        );
-
-        return $this->success([
-            'intent' => $this->stripeFinanceService->topUpIntentPayload($intent),
-            'stripe_finance' => $this->stripeFinanceService->merchantPayload($merchant->fresh(['wallet'])),
-        ], 'Stripe top-up checkout created successfully.', 201);
     }
 
     public function simulateStripeTopUpSuccess(Request $request, string $checkoutCode)
     {
-        $merchant = $this->merchantForUser($request);
+        try {
+            DB::beginTransaction();
 
-        $result = $this->stripeFinanceService->simulateTopUpSuccess($merchant, $checkoutCode);
-        $freshMerchant = $merchant->fresh(['wallet']);
+            $merchant = $this->merchantForUser($request);
 
-        return $this->success([
-            'intent' => $this->stripeFinanceService->topUpIntentPayload($result['intent']),
-            'wallet' => $this->walletPayload($freshMerchant),
-            'wallet_status' => $this->walletAlertService->statusForWallet($freshMerchant->wallet),
-            'stripe_finance' => $this->stripeFinanceService->merchantPayload($freshMerchant),
-            'already_processed' => $result['already_processed'] ?? false,
-        ], ($result['already_processed'] ?? false) ? 'Stripe top-up was already confirmed earlier.' : 'Stripe top-up confirmed successfully on localhost.');
+            $result = $this->stripeFinanceService->simulateTopUpSuccess($merchant, $checkoutCode);
+            $freshMerchant = $merchant->fresh(['wallet']);
+
+            DB::commit();
+
+            return response()->json([
+                'success' => true,
+                'status_code' => 200,
+                'message' => ($result['already_processed'] ?? false) ? 'Stripe top-up was already confirmed earlier.' : 'Stripe top-up confirmed successfully on localhost.',
+                'data' => [
+                        'intent' => $this->stripeFinanceService->topUpIntentPayload($result['intent']),
+                        'wallet' => $this->walletPayload($freshMerchant),
+                        'wallet_status' => $this->walletAlertService->statusForWallet($freshMerchant->wallet),
+                        'stripe_finance' => $this->stripeFinanceService->merchantPayload($freshMerchant),
+                        'already_processed' => $result['already_processed'] ?? false,
+                    ],
+            ], 200);
+        
+        } catch (\Exception $e) {
+            if (DB::transactionLevel() > 0) {
+                DB::rollBack();
+            }
+
+            return response()->json([
+                'success' => false,
+                'status_code' => 500,
+                'message' => 'Something went wrong. ' . $e->getMessage(),
+            ], 500);
+        }
     }
 
     public function sendTestLowBalanceAlert(Request $request)
     {
-        $merchant = $this->merchantForUser($request);
-        $result = $this->walletAlertService->sendTestAlert($merchant);
+        try {
+            DB::beginTransaction();
 
-        if (! $result['sent']) {
-            return $this->error('No email or WhatsApp destination is configured for this merchant.', 422, [
-                'channels' => ['Add a contact email or WhatsApp number before sending alerts.'],
-            ]);
+            $merchant = $this->merchantForUser($request);
+            $result = $this->walletAlertService->sendTestAlert($merchant);
+
+            if (! $result['sent']) {
+                DB::rollBack();
+
+                return response()->json([
+                    'success' => false,
+                    'status_code' => 422,
+                    'message' => 'No email or WhatsApp destination is configured for this merchant.',
+                    'errors' => [
+                            'channels' => ['Add a contact email or WhatsApp number before sending alerts.'],
+                        ],
+                ], 422);
+            }
+
+            DB::commit();
+
+            return response()->json([
+                'success' => true,
+                'status_code' => 200,
+                'message' => 'Wallet alert test sent successfully.',
+                'data' => $result,
+            ], 200);
+        
+        } catch (\Exception $e) {
+            if (DB::transactionLevel() > 0) {
+                DB::rollBack();
+            }
+
+            return response()->json([
+                'success' => false,
+                'status_code' => 500,
+                'message' => 'Something went wrong. ' . $e->getMessage(),
+            ], 500);
         }
-
-        return $this->success($result, 'Wallet alert test sent successfully.');
     }
 
     private function shouldPaginate(Request $request): bool

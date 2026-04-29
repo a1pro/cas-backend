@@ -16,40 +16,100 @@ class MerchantApplicationController extends BaseController
 
     public function index()
     {
-        return $this->success(
-            Merchant::with(['user', 'wallet', 'venues'])->latest()->get()
-        );
+        try {
+            $data = Merchant::with(['user', 'wallet', 'venues'])->latest()->get();
+
+            return response()->json([
+                'success' => true,
+                'status_code' => 200,
+                'message' => 'Operation completed successfully',
+                'data' => $data,
+            ], 200);
+        
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'status_code' => 500,
+                'message' => 'Something went wrong. ' . $e->getMessage(),
+            ], 500);
+        }
     }
 
     public function approve(Merchant $merchant)
     {
-        DB::transaction(function () use ($merchant) {
-            $merchant->update([
-                'status' => 'active',
-                'approved_at' => now(),
-                'rejected_at' => null,
-            ]);
-            $merchant->user()->update(['is_active' => true]);
-            $merchant->venues()->update(['is_active' => true]);
-        });
+        try {
+            DB::beginTransaction();
 
-        $this->merchantNotificationService->sendApprovalMail($merchant->fresh('user'));
+            DB::transaction(function () use ($merchant) {
+                $merchant->update([
+                    'status' => 'active',
+                    'approved_at' => now(),
+                    'rejected_at' => null,
+                ]);
+                $merchant->user()->update(['is_active' => true]);
+                $merchant->venues()->update(['is_active' => true]);
+            });
+            $this->merchantNotificationService->sendApprovalMail($merchant->fresh('user'));
 
-        return $this->success($merchant->fresh(['user', 'wallet', 'venues']), 'Merchant approved successfully');
+            $data = $merchant->fresh(['user', 'wallet', 'venues']);
+
+            DB::commit();
+
+            return response()->json([
+                'success' => true,
+                'status_code' => 200,
+                'message' => 'Merchant approved successfully',
+                'data' => $data,
+            ], 200);
+        
+        } catch (\Exception $e) {
+            if (DB::transactionLevel() > 0) {
+                DB::rollBack();
+            }
+
+            return response()->json([
+                'success' => false,
+                'status_code' => 500,
+                'message' => 'Something went wrong. ' . $e->getMessage(),
+            ], 500);
+        }
     }
 
     public function reject(Merchant $merchant, Request $request)
     {
-        DB::transaction(function () use ($merchant, $request) {
-            $merchant->update([
-                'status' => 'rejected',
-                'rejected_at' => now(),
-                'approval_notes' => $request->string('notes')->toString() ?: 'Rejected by admin',
-            ]);
-            $merchant->user()->update(['is_active' => false]);
-            $merchant->venues()->update(['is_active' => false]);
-        });
+        try {
+            DB::beginTransaction();
 
-        return $this->success($merchant->fresh(['user', 'wallet', 'venues']), 'Merchant rejected');
+            DB::transaction(function () use ($merchant, $request) {
+                $merchant->update([
+                    'status' => 'rejected',
+                    'rejected_at' => now(),
+                    'approval_notes' => $request->string('notes')->toString() ?: 'Rejected by admin',
+                ]);
+                $merchant->user()->update(['is_active' => false]);
+                $merchant->venues()->update(['is_active' => false]);
+            });
+            $data = $merchant->fresh(['user', 'wallet', 'venues']);
+
+            DB::commit();
+
+            return response()->json([
+                'success' => true,
+                'status_code' => 200,
+                'message' => 'Merchant rejected',
+                'data' => $data,
+            ], 200);
+        
+        } catch (\Exception $e) {
+            if (DB::transactionLevel() > 0) {
+                DB::rollBack();
+            }
+
+            return response()->json([
+                'success' => false,
+                'status_code' => 500,
+                'message' => 'Something went wrong. ' . $e->getMessage(),
+            ], 500);
+        }
     }
 }

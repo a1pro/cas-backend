@@ -6,6 +6,7 @@ use App\Http\Controllers\Api\BaseController;
 use App\Models\CasMessageTemplate;
 use App\Services\WhatsApp\WhatsAppTemplateService;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 
 class AdminWhatsAppController extends BaseController
 {
@@ -15,95 +16,231 @@ class AdminWhatsAppController extends BaseController
 
     public function index()
     {
-        return $this->success($this->whatsAppTemplateService->dashboardPayload());
+        try {
+            $data = $this->whatsAppTemplateService->dashboardPayload();
+
+            return response()->json([
+                'success' => true,
+                'status_code' => 200,
+                'message' => 'Operation completed successfully',
+                'data' => $data,
+            ], 200);
+        
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'status_code' => 500,
+                'message' => 'Something went wrong. ' . $e->getMessage(),
+            ], 500);
+        }
     }
 
     public function starterPack(Request $request)
     {
-        $validated = $request->validate([
-            'overwrite_existing' => ['nullable', 'boolean'],
-        ]);
+        try {
+            DB::beginTransaction();
 
-        $result = $this->whatsAppTemplateService->installStarterPack((bool) ($validated['overwrite_existing'] ?? false));
+            $validated = $request->validate([
+                'overwrite_existing' => ['nullable', 'boolean'],
+            ]);
 
-        return $this->success([
-            'result' => $result,
-            'dashboard' => $this->whatsAppTemplateService->dashboardPayload(),
-        ], 'WhatsApp starter template pack applied successfully.');
+            $result = $this->whatsAppTemplateService->installStarterPack((bool) ($validated['overwrite_existing'] ?? false));
+
+            $data = [
+                    'result' => $result,
+                    'dashboard' => $this->whatsAppTemplateService->dashboardPayload(),
+                ];
+
+            DB::commit();
+
+            return response()->json([
+                'success' => true,
+                'status_code' => 200,
+                'message' => 'WhatsApp starter template pack applied successfully.',
+                'data' => $data,
+            ], 200);
+        
+        } catch (\Exception $e) {
+            if (DB::transactionLevel() > 0) {
+                DB::rollBack();
+            }
+
+            return response()->json([
+                'success' => false,
+                'status_code' => 500,
+                'message' => 'Something went wrong. ' . $e->getMessage(),
+            ], 500);
+        }
     }
 
     public function store(Request $request)
     {
-        $validated = $request->validate([
-            'key' => ['required', 'string', 'max:100'],
-            'channel' => ['nullable', 'string', 'max:50'],
-            'journey_type' => ['nullable', 'string', 'max:50'],
-            'weather_condition' => ['nullable', 'string', 'max:50'],
-            'emoji' => ['nullable', 'string', 'max:12'],
-            'body' => ['required', 'string', 'max:1024'],
-            'is_active' => ['nullable', 'boolean'],
-            'sort_order' => ['nullable', 'integer', 'min:0', 'max:999'],
-            'category' => ['nullable', 'string', 'max:50'],
-            'language' => ['nullable', 'string', 'max:20'],
-        ]);
+        try {
+            DB::beginTransaction();
 
-        $template = $this->whatsAppTemplateService->create($validated);
+            $validated = $request->validate([
+                'key' => ['required', 'string', 'max:100'],
+                'channel' => ['nullable', 'string', 'max:50'],
+                'journey_type' => ['nullable', 'string', 'max:50'],
+                'weather_condition' => ['nullable', 'string', 'max:50'],
+                'emoji' => ['nullable', 'string', 'max:12'],
+                'body' => ['required', 'string', 'max:1024'],
+                'is_active' => ['nullable', 'boolean'],
+                'sort_order' => ['nullable', 'integer', 'min:0', 'max:999'],
+                'category' => ['nullable', 'string', 'max:50'],
+                'language' => ['nullable', 'string', 'max:20'],
+            ]);
 
-        return $this->success([
-            'template' => $template,
-            'dashboard' => $this->whatsAppTemplateService->dashboardPayload(),
-        ], 'WhatsApp template created successfully.', 201);
+            $template = $this->whatsAppTemplateService->create($validated);
+
+            $data = [
+                    'template' => $template,
+                    'dashboard' => $this->whatsAppTemplateService->dashboardPayload(),
+                ];
+
+            DB::commit();
+
+            return response()->json([
+                'success' => true,
+                'status_code' => 201,
+                'message' => 'WhatsApp template created successfully.',
+                'data' => $data,
+            ], 201);
+        
+        } catch (\Exception $e) {
+            if (DB::transactionLevel() > 0) {
+                DB::rollBack();
+            }
+
+            return response()->json([
+                'success' => false,
+                'status_code' => 500,
+                'message' => 'Something went wrong. ' . $e->getMessage(),
+            ], 500);
+        }
     }
 
     public function update(Request $request, CasMessageTemplate $template)
     {
-        $validated = $request->validate([
-            'key' => ['sometimes', 'required', 'string', 'max:100'],
-            'channel' => ['nullable', 'string', 'max:50'],
-            'journey_type' => ['nullable', 'string', 'max:50'],
-            'weather_condition' => ['nullable', 'string', 'max:50'],
-            'emoji' => ['nullable', 'string', 'max:12'],
-            'body' => ['sometimes', 'required', 'string', 'max:1024'],
-            'is_active' => ['nullable', 'boolean'],
-            'sort_order' => ['nullable', 'integer', 'min:0', 'max:999'],
-            'category' => ['nullable', 'string', 'max:50'],
-            'language' => ['nullable', 'string', 'max:20'],
-        ]);
+        try {
+            DB::beginTransaction();
 
-        $updated = $this->whatsAppTemplateService->update($template, $validated);
+            $validated = $request->validate([
+                'key' => ['sometimes', 'required', 'string', 'max:100'],
+                'channel' => ['nullable', 'string', 'max:50'],
+                'journey_type' => ['nullable', 'string', 'max:50'],
+                'weather_condition' => ['nullable', 'string', 'max:50'],
+                'emoji' => ['nullable', 'string', 'max:12'],
+                'body' => ['sometimes', 'required', 'string', 'max:1024'],
+                'is_active' => ['nullable', 'boolean'],
+                'sort_order' => ['nullable', 'integer', 'min:0', 'max:999'],
+                'category' => ['nullable', 'string', 'max:50'],
+                'language' => ['nullable', 'string', 'max:20'],
+            ]);
 
-        return $this->success([
-            'template' => $updated,
-            'dashboard' => $this->whatsAppTemplateService->dashboardPayload(),
-        ], 'WhatsApp template updated successfully.');
+            $updated = $this->whatsAppTemplateService->update($template, $validated);
+
+            $data = [
+                    'template' => $updated,
+                    'dashboard' => $this->whatsAppTemplateService->dashboardPayload(),
+                ];
+
+            DB::commit();
+
+            return response()->json([
+                'success' => true,
+                'status_code' => 200,
+                'message' => 'WhatsApp template updated successfully.',
+                'data' => $data,
+            ], 200);
+        
+        } catch (\Exception $e) {
+            if (DB::transactionLevel() > 0) {
+                DB::rollBack();
+            }
+
+            return response()->json([
+                'success' => false,
+                'status_code' => 500,
+                'message' => 'Something went wrong. ' . $e->getMessage(),
+            ], 500);
+        }
     }
 
     public function submit(CasMessageTemplate $template)
     {
-        $updated = $this->whatsAppTemplateService->submitForApproval($template);
+        try {
+            DB::beginTransaction();
 
-        return $this->success([
-            'template' => $updated,
-            'dashboard' => $this->whatsAppTemplateService->dashboardPayload(),
-        ], 'Template submitted for approval.');
+            $updated = $this->whatsAppTemplateService->submitForApproval($template);
+
+            $data = [
+                    'template' => $updated,
+                    'dashboard' => $this->whatsAppTemplateService->dashboardPayload(),
+                ];
+
+            DB::commit();
+
+            return response()->json([
+                'success' => true,
+                'status_code' => 200,
+                'message' => 'Template submitted for approval.',
+                'data' => $data,
+            ], 200);
+        
+        } catch (\Exception $e) {
+            if (DB::transactionLevel() > 0) {
+                DB::rollBack();
+            }
+
+            return response()->json([
+                'success' => false,
+                'status_code' => 500,
+                'message' => 'Something went wrong. ' . $e->getMessage(),
+            ], 500);
+        }
     }
 
     public function simulateApproval(Request $request, CasMessageTemplate $template)
     {
-        $validated = $request->validate([
-            'approval_status' => ['required', 'in:approved,rejected'],
-            'approval_notes' => ['nullable', 'string', 'max:500'],
-        ]);
+        try {
+            DB::beginTransaction();
 
-        $updated = $this->whatsAppTemplateService->simulateApproval(
-            $template,
-            $validated['approval_status'],
-            $validated['approval_notes'] ?? null,
-        );
+            $validated = $request->validate([
+                'approval_status' => ['required', 'in:approved,rejected'],
+                'approval_notes' => ['nullable', 'string', 'max:500'],
+            ]);
 
-        return $this->success([
-            'template' => $updated,
-            'dashboard' => $this->whatsAppTemplateService->dashboardPayload(),
-        ], 'Template approval status updated.');
+            $updated = $this->whatsAppTemplateService->simulateApproval(
+                $template,
+                $validated['approval_status'],
+                $validated['approval_notes'] ?? null,
+            );
+
+            $data = [
+                    'template' => $updated,
+                    'dashboard' => $this->whatsAppTemplateService->dashboardPayload(),
+                ];
+
+            DB::commit();
+
+            return response()->json([
+                'success' => true,
+                'status_code' => 200,
+                'message' => 'Template approval status updated.',
+                'data' => $data,
+            ], 200);
+        
+        } catch (\Exception $e) {
+            if (DB::transactionLevel() > 0) {
+                DB::rollBack();
+            }
+
+            return response()->json([
+                'success' => false,
+                'status_code' => 500,
+                'message' => 'Something went wrong. ' . $e->getMessage(),
+            ], 500);
+        }
     }
 }

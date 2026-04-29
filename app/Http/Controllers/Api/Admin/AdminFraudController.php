@@ -6,6 +6,7 @@ use App\Http\Controllers\Api\BaseController;
 use App\Models\User;
 use App\Services\Fraud\FraudPreventionService;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 
 class AdminFraudController extends BaseController
 {
@@ -15,45 +16,133 @@ class AdminFraudController extends BaseController
 
     public function index()
     {
-        $users = $this->fraudPreventionService->flaggedUsers();
+        try {
+            $users = $this->fraudPreventionService->flaggedUsers();
 
-        return $this->success([
-            'summary' => $this->fraudPreventionService->dashboardSummary(),
-            'users' => $users->map(fn (User $user) => $this->fraudPreventionService->userPayload($user))->values(),
-        ]);
+            $data = [
+                    'summary' => $this->fraudPreventionService->dashboardSummary(),
+                    'users' => $users->map(fn (User $user) => $this->fraudPreventionService->userPayload($user))->values(),
+                ];
+
+            return response()->json([
+                'success' => true,
+                'status_code' => 200,
+                'message' => 'Operation completed successfully',
+                'data' => $data,
+            ], 200);
+        
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'status_code' => 500,
+                'message' => 'Something went wrong. ' . $e->getMessage(),
+            ], 500);
+        }
     }
 
     public function review(Request $request, User $user)
     {
-        $validated = $request->validate([
-            'notes' => ['nullable', 'string', 'max:500'],
-        ]);
+        try {
+            DB::beginTransaction();
 
-        $user = $this->fraudPreventionService->markReviewed($user, $validated['notes'] ?? null);
+            $validated = $request->validate([
+                'notes' => ['nullable', 'string', 'max:500'],
+            ]);
 
-        return $this->success($this->fraudPreventionService->userPayload($user), 'User marked as reviewed.');
+            $user = $this->fraudPreventionService->markReviewed($user, $validated['notes'] ?? null);
+
+            $data = $this->fraudPreventionService->userPayload($user);
+
+            DB::commit();
+
+            return response()->json([
+                'success' => true,
+                'status_code' => 200,
+                'message' => 'User marked as reviewed.',
+                'data' => $data,
+            ], 200);
+        
+        } catch (\Exception $e) {
+            if (DB::transactionLevel() > 0) {
+                DB::rollBack();
+            }
+
+            return response()->json([
+                'success' => false,
+                'status_code' => 500,
+                'message' => 'Something went wrong. ' . $e->getMessage(),
+            ], 500);
+        }
     }
 
     public function block(Request $request, User $user)
     {
-        $validated = $request->validate([
-            'reason' => ['nullable', 'string', 'max:500'],
-            'days' => ['nullable', 'integer', 'min:1', 'max:365'],
-        ]);
+        try {
+            DB::beginTransaction();
 
-        $user = $this->fraudPreventionService->blockUser($user, $validated['reason'] ?? null, $validated['days'] ?? null);
+            $validated = $request->validate([
+                'reason' => ['nullable', 'string', 'max:500'],
+                'days' => ['nullable', 'integer', 'min:1', 'max:365'],
+            ]);
 
-        return $this->success($this->fraudPreventionService->userPayload($user), 'User blocked successfully.');
+            $user = $this->fraudPreventionService->blockUser($user, $validated['reason'] ?? null, $validated['days'] ?? null);
+
+            $data = $this->fraudPreventionService->userPayload($user);
+
+            DB::commit();
+
+            return response()->json([
+                'success' => true,
+                'status_code' => 200,
+                'message' => 'User blocked successfully.',
+                'data' => $data,
+            ], 200);
+        
+        } catch (\Exception $e) {
+            if (DB::transactionLevel() > 0) {
+                DB::rollBack();
+            }
+
+            return response()->json([
+                'success' => false,
+                'status_code' => 500,
+                'message' => 'Something went wrong. ' . $e->getMessage(),
+            ], 500);
+        }
     }
 
     public function unblock(Request $request, User $user)
     {
-        $validated = $request->validate([
-            'notes' => ['nullable', 'string', 'max:500'],
-        ]);
+        try {
+            DB::beginTransaction();
 
-        $user = $this->fraudPreventionService->unblockUser($user, $validated['notes'] ?? null);
+            $validated = $request->validate([
+                'notes' => ['nullable', 'string', 'max:500'],
+            ]);
 
-        return $this->success($this->fraudPreventionService->userPayload($user), 'User unblocked successfully.');
+            $user = $this->fraudPreventionService->unblockUser($user, $validated['notes'] ?? null);
+
+            $data = $this->fraudPreventionService->userPayload($user);
+
+            DB::commit();
+
+            return response()->json([
+                'success' => true,
+                'status_code' => 200,
+                'message' => 'User unblocked successfully.',
+                'data' => $data,
+            ], 200);
+        
+        } catch (\Exception $e) {
+            if (DB::transactionLevel() > 0) {
+                DB::rollBack();
+            }
+
+            return response()->json([
+                'success' => false,
+                'status_code' => 500,
+                'message' => 'Something went wrong. ' . $e->getMessage(),
+            ], 500);
+        }
     }
 }
