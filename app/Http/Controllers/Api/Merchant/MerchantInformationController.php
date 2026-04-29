@@ -6,107 +6,216 @@ use App\Http\Controllers\Api\BaseController;
 use App\Models\Merchant;
 use App\Models\Venue;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 
 class MerchantInformationController extends BaseController
 {
     public function index(Request $request)
     {
-        $merchant = $this->merchantForUser($request);
+        try {
+            $merchant = $this->merchantForUser($request);
 
-        return $this->success([
-            'summary' => [
-                'pending' => $merchant->venues()->where('approval_status', 'pending')->count(),
-                'approved' => $merchant->venues()->where('approval_status', 'approved')->count(),
-                'rejected' => $merchant->venues()->where('approval_status', 'rejected')->count(),
-                'total' => $merchant->venues()->count(),
-            ],
-            'items' => $merchant->venues()
-                ->orderByRaw("CASE WHEN approval_status = 'pending' THEN 0 WHEN approval_status = 'rejected' THEN 1 WHEN approval_status = 'approved' THEN 2 ELSE 3 END")
-                ->latest('submitted_for_approval_at')
-                ->get()
-                ->map(fn (Venue $venue) => $this->transformVenue($venue))
-                ->values(),
-        ]);
+            $data = [
+                'summary' => [
+                    'pending' => $merchant->venues()->where('approval_status', 'pending')->count(),
+                    'approved' => $merchant->venues()->where('approval_status', 'approved')->count(),
+                    'rejected' => $merchant->venues()->where('approval_status', 'rejected')->count(),
+                    'total' => $merchant->venues()->count(),
+                ],
+                'items' => $merchant->venues()
+                    ->orderByRaw("CASE WHEN approval_status = 'pending' THEN 0 WHEN approval_status = 'rejected' THEN 1 WHEN approval_status = 'approved' THEN 2 ELSE 3 END")
+                    ->latest('submitted_for_approval_at')
+                    ->get()
+                    ->map(fn (Venue $venue) => $this->transformVenue($venue))
+                    ->values(),
+            ];
+
+            return response()->json([
+                'success' => true,
+                'status_code' => 200,
+                'message' => 'Operation completed successfully',
+                'data' => $data,
+            ], 200);
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'status_code' => 500,
+                'message' => 'Something went wrong. ' . $e->getMessage(),
+            ], 500);
+        }
     }
 
     public function store(Request $request)
     {
-        $merchant = $this->merchantForUser($request);
-        $validated = $this->validateVenuePayload($request, true);
+        try {
+            DB::beginTransaction();
 
-        $venue = $merchant->venues()->create(array_merge($this->normalisedVenuePayload($validated), [
-            'is_active' => false,
-            'approval_status' => 'pending',
-            'submitted_for_approval_at' => now(),
-            'approved_at' => null,
-            'approved_by_user_id' => null,
-            'rejected_at' => null,
-            'rejection_reason' => null,
-            'offer_enabled' => false,
-            'offer_value' => $validated['offer_value'] ?? 5,
-            'offer_days' => ['friday', 'saturday'],
-            'offer_start_time' => '18:00:00',
-            'offer_end_time' => '23:59:00',
-            'minimum_order' => $validated['minimum_order'] ?? ($this->isFoodBusiness($validated['category']) ? 25 : null),
-            'fulfilment_type' => $this->isFoodBusiness($validated['category']) ? 'delivery' : 'venue',
-            'offer_review_status' => 'draft',
-            'offer_type' => $validated['offer_type'] ?? ($this->isFoodBusiness($validated['category']) ? 'food' : 'ride'),
-            'ride_trip_type' => $validated['ride_trip_type'] ?? 'to_venue',
-        ]));
+            $merchant = $this->merchantForUser($request);
+            $validated = $this->validateVenuePayload($request, true);
 
-        return $this->success([
-            'venue' => $this->transformVenue($venue->fresh()),
-            'summary' => [
-                'pending' => $merchant->venues()->where('approval_status', 'pending')->count(),
-                'approved' => $merchant->venues()->where('approval_status', 'approved')->count(),
-                'rejected' => $merchant->venues()->where('approval_status', 'rejected')->count(),
-                'total' => $merchant->venues()->count(),
-            ],
-        ], 'Venue information submitted for admin approval.', 201);
+            $venue = $merchant->venues()->create(array_merge($this->normalisedVenuePayload($validated), [
+                'is_active' => false,
+                'approval_status' => 'pending',
+                'submitted_for_approval_at' => now(),
+                'approved_at' => null,
+                'approved_by_user_id' => null,
+                'rejected_at' => null,
+                'rejection_reason' => null,
+                'offer_enabled' => false,
+                'offer_value' => $validated['offer_value'] ?? 5,
+                'offer_days' => ['friday', 'saturday'],
+                'offer_start_time' => '18:00:00',
+                'offer_end_time' => '23:59:00',
+                'minimum_order' => $validated['minimum_order'] ?? ($this->isFoodBusiness($validated['category']) ? 25 : null),
+                'fulfilment_type' => $this->isFoodBusiness($validated['category']) ? 'delivery' : 'venue',
+                'offer_review_status' => 'draft',
+                'offer_type' => $validated['offer_type'] ?? ($this->isFoodBusiness($validated['category']) ? 'food' : 'ride'),
+                'ride_trip_type' => $validated['ride_trip_type'] ?? 'to_venue',
+            ]));
+
+            $data = [
+                'venue' => $this->transformVenue($venue->fresh()),
+                'summary' => [
+                    'pending' => $merchant->venues()->where('approval_status', 'pending')->count(),
+                    'approved' => $merchant->venues()->where('approval_status', 'approved')->count(),
+                    'rejected' => $merchant->venues()->where('approval_status', 'rejected')->count(),
+                    'total' => $merchant->venues()->count(),
+                ],
+            ];
+
+            DB::commit();
+
+            return response()->json([
+                'success' => true,
+                'status_code' => 200,
+                'message' => 'Operation completed successfully',
+                'data' => $data,
+            ], 200);
+        } catch (\Exception $e) {
+            if (DB::transactionLevel() > 0) {
+                DB::rollBack();
+            }
+
+            return response()->json([
+                'success' => false,
+                'status_code' => 500,
+                'message' => 'Something went wrong. ' . $e->getMessage(),
+            ], 500);
+        }
     }
 
     public function update(Request $request, Venue $venue)
     {
-        $merchant = $this->merchantForUser($request);
+        try {
+            DB::beginTransaction();
 
-        if ((int) $venue->merchant_id !== (int) $merchant->id) {
-            return $this->error('Venue does not belong to this merchant.', 403);
+            $merchant = $this->merchantForUser($request);
+
+            if ((int) $venue->merchant_id !== (int) $merchant->id) {
+                DB::rollBack();
+
+                return response()->json([
+                    'success' => false,
+                    'status_code' => 403,
+                    'message' => 'Venue does not belong to this merchant.',
+                ], 403);
+            }
+
+            if ($venue->approval_status === 'approved') {
+                DB::rollBack();
+
+                return response()->json([
+                    'success' => false,
+                    'status_code' => 422,
+                    'message' => 'Approved venue information cannot be changed here. Please request an admin address/profile change.',
+                ], 422);
+            }
+
+            $validated = $this->validateVenuePayload($request, false);
+
+            $venue->update(array_merge($this->normalisedVenuePayload($validated, $venue), [
+                'is_active' => false,
+                'approval_status' => 'pending',
+                'submitted_for_approval_at' => now(),
+                'rejected_at' => null,
+                'rejection_reason' => null,
+            ]));
+
+            $data = [
+                'venue' => $this->transformVenue($venue->fresh()),
+            ];
+
+            DB::commit();
+
+            return response()->json([
+                'success' => true,
+                'status_code' => 200,
+                'message' => 'Operation completed successfully',
+                'data' => $data,
+            ], 200);
+        } catch (\Exception $e) {
+            if (DB::transactionLevel() > 0) {
+                DB::rollBack();
+            }
+
+            return response()->json([
+                'success' => false,
+                'status_code' => 500,
+                'message' => 'Something went wrong. ' . $e->getMessage(),
+            ], 500);
         }
-
-        if ($venue->approval_status === 'approved') {
-            return $this->error('Approved venue information cannot be changed here. Please request an admin address/profile change.', 422);
-        }
-
-        $validated = $this->validateVenuePayload($request, false);
-
-        $venue->update(array_merge($this->normalisedVenuePayload($validated, $venue), [
-            'is_active' => false,
-            'approval_status' => 'pending',
-            'submitted_for_approval_at' => now(),
-            'rejected_at' => null,
-            'rejection_reason' => null,
-        ]));
-
-        return $this->success([
-            'venue' => $this->transformVenue($venue->fresh()),
-        ], 'Venue information updated and re-submitted for admin approval.');
     }
 
     public function destroy(Request $request, Venue $venue)
     {
-        $merchant = $this->merchantForUser($request);
+        try {
+            DB::beginTransaction();
 
-        if ((int) $venue->merchant_id !== (int) $merchant->id) {
-            return $this->error('Venue does not belong to this merchant.', 403);
+            $merchant = $this->merchantForUser($request);
+
+            if ((int) $venue->merchant_id !== (int) $merchant->id) {
+                DB::rollBack();
+
+                return response()->json([
+                    'success' => false,
+                    'status_code' => 403,
+                    'message' => 'Venue does not belong to this merchant.',
+                ], 403);
+            }
+
+            if ($venue->approval_status === 'approved' || $venue->vouchers()->exists()) {
+                DB::rollBack();
+
+                return response()->json([
+                    'success' => false,
+                    'status_code' => 422,
+                    'message' => 'Approved venues or venues with voucher history cannot be deleted by merchant.',
+                ], 422);
+            }
+
+            $venue->delete();
+
+            $data = [];
+
+            DB::commit();
+
+            return response()->json([
+                'success' => true,
+                'status_code' => 200,
+                'message' => 'Operation completed successfully',
+                'data' => $data,
+            ], 200);
+        } catch (\Exception $e) {
+            if (DB::transactionLevel() > 0) {
+                DB::rollBack();
+            }
+
+            return response()->json([
+                'success' => false,
+                'status_code' => 500,
+                'message' => 'Something went wrong. ' . $e->getMessage(),
+            ], 500);
         }
-
-        if ($venue->approval_status === 'approved' || $venue->vouchers()->exists()) {
-            return $this->error('Approved venues or venues with voucher history cannot be deleted by merchant.', 422);
-        }
-
-        $venue->delete();
-
-        return $this->success([], 'Venue information removed successfully.');
     }
 
     private function validateVenuePayload(Request $request, bool $creating): array

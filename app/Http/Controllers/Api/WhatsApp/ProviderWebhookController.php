@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api\WhatsApp;
 use App\Http\Controllers\Controller;
 use App\Services\WhatsApp\WhatsAppProviderWebhookService;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use RuntimeException;
 
@@ -16,53 +17,84 @@ class ProviderWebhookController extends Controller
 
     public function verify(Request $request)
     {
-        $result = $this->whatsAppProviderWebhookService->verifyChallenge($request->query());
+        try {
+            $result = $this->whatsAppProviderWebhookService->verifyChallenge($request->query());
 
-        if (! $result['valid']) {
-            Log::warning('WhatsApp webhook verify challenge failed', [
-                'query' => $request->query(),
-            ]);
+            if (! $result['valid']) {
+                Log::warning('WhatsApp webhook verify challenge failed', [
+                    'query' => $request->query(),
+                ]);
 
+                return response()->json([
+                    'success' => false,
+                    'status_code' => 403,
+                    'message' => $result['reason'],
+                    'data' => null,
+                ], 403);
+            }
+
+            return response((string) $result['challenge'], 200)
+                ->header('Content-Type', 'text/plain');
+        } catch (\Exception $e) {
             return response()->json([
-                'verified' => false,
-                'message' => $result['reason'],
-            ], 403);
+                'success' => false,
+                'status_code' => 500,
+                'message' => 'Something went wrong. ' . $e->getMessage(),
+            ], 500);
         }
-
-        return response((string) $result['challenge'], 200)
-            ->header('Content-Type', 'text/plain');
     }
 
     public function handle(Request $request)
     {
         try {
+            DB::beginTransaction();
+
             $result = $this->whatsAppProviderWebhookService->handle($request->all(), [
                 'raw_payload' => $request->getContent(),
                 'signature' => $request->header('X-Hub-Signature-256'),
                 'user-agent' => $request->userAgent(),
             ]);
 
-            return response()->json([
+            $data = [
                 'received' => true,
                 'signature_valid' => $result['signature_valid'] ?? null,
+            ];
+
+            DB::commit();
+
+            return response()->json([
+                'success' => true,
+                'status_code' => 200,
+                'message' => 'Operation completed successfully',
+                'data' => $data,
             ], 200);
-        } catch (RuntimeException $throwable) {
+        } catch (RuntimeException $e) {
+            DB::rollBack();
+
             Log::warning('WhatsApp webhook signature rejected', [
-                'message' => $throwable->getMessage(),
+                'message' => $e->getMessage(),
             ]);
 
             return response()->json([
-                'received' => false,
-                'message' => $throwable->getMessage(),
+                'success' => false,
+                'status_code' => 403,
+                'message' => $e->getMessage(),
+                'data' => null,
             ], 403);
-        } catch (\Throwable $throwable) {
-            Log::error('WhatsApp webhook processing failed', [
-                'message' => $throwable->getMessage(),
-                'file' => $throwable->getFile(),
-                'line' => $throwable->getLine(),
-            ]);
-        }
+        } catch (\Exception $e) {
+            DB::rollBack();
 
-        return response()->json(['received' => true], 200);
+            Log::error('WhatsApp webhook processing failed', [
+                'message' => $e->getMessage(),
+                'file' => $e->getFile(),
+                'line' => $e->getLine(),
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'status_code' => 500,
+                'message' => 'Something went wrong. ' . $e->getMessage(),
+            ], 500);
+        }
     }
 }

@@ -7,6 +7,7 @@ use App\Models\Merchant;
 use App\Models\Venue;
 use App\Models\User;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 
@@ -14,189 +15,433 @@ class AdminInformationController extends BaseController
 {
     public function index(Request $request)
     {
-        $validated = $request->validate([
-            'status' => ['nullable', 'in:all,pending,approved,rejected'],
-            'merchant_id' => ['nullable', 'integer', 'exists:merchants,id'],
-            'search' => ['nullable', 'string', 'max:120'],
-            'limit' => ['nullable', 'integer', 'min:1', 'max:300'],
-        ]);
+        try {
+            $validated = $request->validate([
+                'status' => ['nullable', 'in:all,pending,approved,rejected'],
+                'merchant_id' => ['nullable', 'integer', 'exists:merchants,id'],
+                'search' => ['nullable', 'string', 'max:120'],
+                'limit' => ['nullable', 'integer', 'min:1', 'max:300'],
+            ]);
 
-        $query = Venue::with(['merchant.user']);
+            $query = Venue::with(['merchant.user']);
 
-        if (($validated['status'] ?? 'all') !== 'all') {
-            $query->where('approval_status', $validated['status']);
+            if (($validated['status'] ?? 'all') !== 'all') {
+                $query->where('approval_status', $validated['status']);
+            }
+
+            if (! empty($validated['merchant_id'])) {
+                $query->where('merchant_id', $validated['merchant_id']);
+            }
+
+            if (! empty($validated['search'])) {
+                $search = trim($validated['search']);
+                $query->where(function ($nested) use ($search) {
+                    $nested->where('name', 'like', "%{$search}%")
+                        ->orWhere('postcode', 'like', "%{$search}%")
+                        ->orWhere('venue_code', 'like', "%{$search}%")
+                        ->orWhere('category', 'like', "%{$search}%")
+                        ->orWhereHas('merchant', fn ($merchantQuery) => $merchantQuery->where('business_name', 'like', "%{$search}%"));
+                });
+            }
+
+            $venues = $query
+                ->latest('submitted_for_approval_at')
+                ->latest('created_at')
+                ->limit((int) ($validated['limit'] ?? 100))
+                ->get();
+
+            $data = [
+                    'summary' => $this->summary(),
+                    'items' => $venues->map(fn (Venue $venue) => $this->transformVenue($venue))->values(),
+                ];
+
+            return response()->json([
+                'success' => true,
+                'status_code' => 200,
+                'message' => 'Operation completed successfully',
+                'data' => $data,
+            ], 200);
+        
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'status_code' => 500,
+                'message' => 'Something went wrong. ' . $e->getMessage(),
+            ], 500);
         }
-
-        if (! empty($validated['merchant_id'])) {
-            $query->where('merchant_id', $validated['merchant_id']);
-        }
-
-        if (! empty($validated['search'])) {
-            $search = trim($validated['search']);
-            $query->where(function ($nested) use ($search) {
-                $nested->where('name', 'like', "%{$search}%")
-                    ->orWhere('postcode', 'like', "%{$search}%")
-                    ->orWhere('venue_code', 'like', "%{$search}%")
-                    ->orWhere('category', 'like', "%{$search}%")
-                    ->orWhereHas('merchant', fn ($merchantQuery) => $merchantQuery->where('business_name', 'like', "%{$search}%"));
-            });
-        }
-
-        $venues = $query
-            ->latest('submitted_for_approval_at')
-            ->latest('created_at')
-            ->limit((int) ($validated['limit'] ?? 100))
-            ->get();
-
-        return $this->success([
-            'summary' => $this->summary(),
-            'items' => $venues->map(fn (Venue $venue) => $this->transformVenue($venue))->values(),
-        ]);
     }
 
     public function store(Request $request)
     {
-        $validated = $this->validateVenuePayload($request, true);
-        $merchant = Merchant::with('user')->findOrFail($validated['merchant_id']);
-        $status = $validated['approval_status'] ?? 'approved';
-        $manualCode = $this->normaliseVenueCode($validated['venue_code'] ?? null);
+        try {
+            DB::beginTransaction();
 
-        if ($status === 'approved' && ($merchant->status !== 'active' || ! $merchant->user?->is_active)) {
-            return $this->error('Choose an approved merchant before creating an approved venue, or set this venue to pending.', 422);
+            $validated = $this->validateVenuePayload($request, true);
+            $merchant = Merchant::with('user')->findOrFail($validated['merchant_id']);
+            $status = $validated['approval_status'] ?? 'approved';
+            $manualCode = $this->normaliseVenueCode($validated['venue_code'] ?? null);
+
+            if ($status === 'approved' && ($merchant->status !== 'active' || ! $merchant->user?->is_active)) {
+                if (DB::transactionLevel() > 0) {
+                    DB::rollBack();
+                }
+
+                return response()->json([
+                    'success' => false,
+                    'status_code' => 422,
+                    'message' => 'Choose an approved merchant before creating an approved venue, or set this venue to pending.',
+                ], 422);
+            }
+
+            if ($status === 'approved' && ! $manualCode) {
+                if (DB::transactionLevel() > 0) {
+                    DB::rollBack();
+                }
+
+                return response()->json([
+                    'success' => false,
+                    'status_code' => 422,
+                    'message' => 'Enter a 6 character alphanumeric venue code before approving this venue.',
+                ], 422);
+            }
+
+            $venue = $merchant->venues()->create(array_merge(
+                $this->normalisedVenuePayload($validated),
+                $this->approvalFields($status, $request->user()->id, null, $manualCode)
+            ));
+
+            $data = [
+                    'venue' => $this->transformVenue($venue->fresh(['merchant.user'])),
+                    'summary' => $this->summary(),
+                ];
+
+            DB::commit();
+
+            return response()->json([
+                'success' => true,
+                'status_code' => 201,
+                'message' => $status === 'approved' ? 'Venue information created and manual 6 character code saved.' : 'Venue information created.',
+                'data' => $data,
+            ], 201);
+        
+        } catch (\Exception $e) {
+            if (DB::transactionLevel() > 0) {
+                DB::rollBack();
+            }
+
+            return response()->json([
+                'success' => false,
+                'status_code' => 500,
+                'message' => 'Something went wrong. ' . $e->getMessage(),
+            ], 500);
         }
-
-        if ($status === 'approved' && ! $manualCode) {
-            return $this->error('Enter a 6 character alphanumeric venue code before approving this venue.', 422);
-        }
-
-        $venue = $merchant->venues()->create(array_merge(
-            $this->normalisedVenuePayload($validated),
-            $this->approvalFields($status, $request->user()->id, null, $manualCode)
-        ));
-
-        return $this->success([
-            'venue' => $this->transformVenue($venue->fresh(['merchant.user'])),
-            'summary' => $this->summary(),
-        ], $status === 'approved' ? 'Venue information created and manual 6 character code saved.' : 'Venue information created.', 201);
     }
 
     public function update(Request $request, Venue $venue)
     {
-        $validated = $this->validateVenuePayload($request, false, $venue);
-        $status = $validated['approval_status'] ?? $venue->approval_status ?? 'pending';
-        $manualCode = $this->normaliseVenueCode($validated['venue_code'] ?? null);
+        try {
+            DB::beginTransaction();
 
-        if (! empty($validated['merchant_id']) && (int) $validated['merchant_id'] !== (int) $venue->merchant_id) {
-            $venue->merchant_id = (int) $validated['merchant_id'];
+            $validated = $this->validateVenuePayload($request, false, $venue);
+            $status = $validated['approval_status'] ?? $venue->approval_status ?? 'pending';
+            $manualCode = $this->normaliseVenueCode($validated['venue_code'] ?? null);
+
+            if (! empty($validated['merchant_id']) && (int) $validated['merchant_id'] !== (int) $venue->merchant_id) {
+                $venue->merchant_id = (int) $validated['merchant_id'];
+            }
+
+            $merchant = Merchant::with('user')->findOrFail((int) ($validated['merchant_id'] ?? $venue->merchant_id));
+            if ($status === 'approved' && ($merchant->status !== 'active' || ! $merchant->user?->is_active)) {
+                if (DB::transactionLevel() > 0) {
+                    DB::rollBack();
+                }
+
+                return response()->json([
+                    'success' => false,
+                    'status_code' => 422,
+                    'message' => 'Approve the merchant account before approving this venue.',
+                ], 422);
+            }
+
+            if ($status === 'approved' && ! $manualCode && ! $venue->venue_code) {
+                if (DB::transactionLevel() > 0) {
+                    DB::rollBack();
+                }
+
+                return response()->json([
+                    'success' => false,
+                    'status_code' => 422,
+                    'message' => 'Enter a 6 character alphanumeric venue code before approving this venue.',
+                ], 422);
+            }
+
+            $venue->fill($this->normalisedVenuePayload($validated, $venue));
+            $venue->fill($this->approvalFields($status, $request->user()->id, $venue, $manualCode));
+            $venue->save();
+
+            $data = [
+                    'venue' => $this->transformVenue($venue->fresh(['merchant.user'])),
+                    'summary' => $this->summary(),
+                ];
+
+            DB::commit();
+
+            return response()->json([
+                'success' => true,
+                'status_code' => 200,
+                'message' => 'Venue information updated successfully.',
+                'data' => $data,
+            ], 200);
+        
+        } catch (\Exception $e) {
+            if (DB::transactionLevel() > 0) {
+                DB::rollBack();
+            }
+
+            return response()->json([
+                'success' => false,
+                'status_code' => 500,
+                'message' => 'Something went wrong. ' . $e->getMessage(),
+            ], 500);
         }
-
-        $merchant = Merchant::with('user')->findOrFail((int) ($validated['merchant_id'] ?? $venue->merchant_id));
-        if ($status === 'approved' && ($merchant->status !== 'active' || ! $merchant->user?->is_active)) {
-            return $this->error('Approve the merchant account before approving this venue.', 422);
-        }
-
-        if ($status === 'approved' && ! $manualCode && ! $venue->venue_code) {
-            return $this->error('Enter a 6 character alphanumeric venue code before approving this venue.', 422);
-        }
-
-        $venue->fill($this->normalisedVenuePayload($validated, $venue));
-        $venue->fill($this->approvalFields($status, $request->user()->id, $venue, $manualCode));
-        $venue->save();
-
-        return $this->success([
-            'venue' => $this->transformVenue($venue->fresh(['merchant.user'])),
-            'summary' => $this->summary(),
-        ], 'Venue information updated successfully.');
     }
 
     public function destroy(Venue $venue)
     {
-        if ($venue->vouchers()->exists()) {
-            return $this->error('This venue has voucher history and cannot be deleted. Deactivate or reject it instead.', 422);
+        try {
+            DB::beginTransaction();
+
+            if ($venue->vouchers()->exists()) {
+                if (DB::transactionLevel() > 0) {
+                    DB::rollBack();
+                }
+
+                return response()->json([
+                    'success' => false,
+                    'status_code' => 422,
+                    'message' => 'This venue has voucher history and cannot be deleted. Deactivate or reject it instead.',
+                ], 422);
+            }
+
+            $venue->delete();
+
+            $data = [
+                    'summary' => $this->summary(),
+                ];
+
+            DB::commit();
+
+            return response()->json([
+                'success' => true,
+                'status_code' => 200,
+                'message' => 'Venue information deleted successfully.',
+                'data' => $data,
+            ], 200);
+        
+        } catch (\Exception $e) {
+            if (DB::transactionLevel() > 0) {
+                DB::rollBack();
+            }
+
+            return response()->json([
+                'success' => false,
+                'status_code' => 500,
+                'message' => 'Something went wrong. ' . $e->getMessage(),
+            ], 500);
         }
-
-        $venue->delete();
-
-        return $this->success([
-            'summary' => $this->summary(),
-        ], 'Venue information deleted successfully.');
     }
 
     public function approve(Request $request, Venue $venue)
     {
-        $venue->load('merchant.user');
+        try {
+            DB::beginTransaction();
 
-        if ($venue->merchant?->status !== 'active' || ! $venue->merchant?->user?->is_active) {
-            return $this->error('Approve the merchant account before approving venues.', 422);
+            $venue->load('merchant.user');
+
+            if ($venue->merchant?->status !== 'active' || ! $venue->merchant?->user?->is_active) {
+                if (DB::transactionLevel() > 0) {
+                    DB::rollBack();
+                }
+
+                return response()->json([
+                    'success' => false,
+                    'status_code' => 422,
+                    'message' => 'Approve the merchant account before approving venues.',
+                ], 422);
+            }
+
+            $validated = $request->validate([
+                'venue_code' => $this->venueCodeRules($venue, true),
+            ]);
+
+            $venue->update($this->approvalFields(
+                'approved',
+                $request->user()->id,
+                $venue,
+                $this->normaliseVenueCode($validated['venue_code'] ?? null)
+            ));
+
+            $data = [
+                    'venue' => $this->transformVenue($venue->fresh(['merchant.user'])),
+                    'summary' => $this->summary(),
+                ];
+
+            DB::commit();
+
+            return response()->json([
+                'success' => true,
+                'status_code' => 200,
+                'message' => 'Venue approved with manual 6 character alphanumeric code.',
+                'data' => $data,
+            ], 200);
+        
+        } catch (\Exception $e) {
+            if (DB::transactionLevel() > 0) {
+                DB::rollBack();
+            }
+
+            return response()->json([
+                'success' => false,
+                'status_code' => 500,
+                'message' => 'Something went wrong. ' . $e->getMessage(),
+            ], 500);
         }
-
-        $validated = $request->validate([
-            'venue_code' => $this->venueCodeRules($venue, true),
-        ]);
-
-        $venue->update($this->approvalFields(
-            'approved',
-            $request->user()->id,
-            $venue,
-            $this->normaliseVenueCode($validated['venue_code'] ?? null)
-        ));
-
-        return $this->success([
-            'venue' => $this->transformVenue($venue->fresh(['merchant.user'])),
-            'summary' => $this->summary(),
-        ], 'Venue approved with manual 6 character alphanumeric code.');
     }
 
     public function publish(Request $request, Venue $venue)
     {
-        return $this->approve($request, $venue);
+        try {
+            DB::beginTransaction();
+
+            $venue->load('merchant.user');
+
+            if ($venue->merchant?->status !== 'active' || ! $venue->merchant?->user?->is_active) {
+                if (DB::transactionLevel() > 0) {
+                    DB::rollBack();
+                }
+
+                return response()->json([
+                    'success' => false,
+                    'status_code' => 422,
+                    'message' => 'Approve the merchant account before approving venues.',
+                ], 422);
+            }
+
+            $validated = $request->validate([
+                'venue_code' => $this->venueCodeRules($venue, true),
+            ]);
+
+            $venue->update($this->approvalFields(
+                'approved',
+                $request->user()->id,
+                $venue,
+                $this->normaliseVenueCode($validated['venue_code'] ?? null)
+            ));
+
+            $data = [
+                'venue' => $this->transformVenue($venue->fresh(['merchant.user'])),
+                'summary' => $this->summary(),
+            ];
+
+            DB::commit();
+
+            return response()->json([
+                'success' => true,
+                'status_code' => 200,
+                'message' => 'Venue approved with manual 6 character alphanumeric code.',
+                'data' => $data,
+            ], 200);
+        } catch (\Exception $e) {
+            if (DB::transactionLevel() > 0) {
+                DB::rollBack();
+            }
+
+            return response()->json([
+                'success' => false,
+                'status_code' => 500,
+                'message' => 'Something went wrong. ' . $e->getMessage(),
+            ], 500);
+        }
     }
 
     public function reject(Request $request, Venue $venue)
     {
-        $validated = $request->validate([
-            'reason' => ['nullable', 'string', 'max:1000'],
-        ]);
+        try {
+            DB::beginTransaction();
 
-        $venue->update([
-            'approval_status' => 'rejected',
-            'is_active' => false,
-            'approved_at' => null,
-            'approved_by_user_id' => null,
-            'rejected_at' => now(),
-            'rejection_reason' => $validated['reason'] ?? 'Rejected from admin information page.',
-        ]);
+            $validated = $request->validate([
+                'reason' => ['nullable', 'string', 'max:1000'],
+            ]);
 
-        return $this->success([
-            'venue' => $this->transformVenue($venue->fresh(['merchant.user'])),
-            'summary' => $this->summary(),
-        ], 'Venue rejected successfully.');
+            $venue->update([
+                'approval_status' => 'rejected',
+                'is_active' => false,
+                'approved_at' => null,
+                'approved_by_user_id' => null,
+                'rejected_at' => now(),
+                'rejection_reason' => $validated['reason'] ?? 'Rejected from admin information page.',
+            ]);
+
+            $data = [
+                    'venue' => $this->transformVenue($venue->fresh(['merchant.user'])),
+                    'summary' => $this->summary(),
+                ];
+
+            DB::commit();
+
+            return response()->json([
+                'success' => true,
+                'status_code' => 200,
+                'message' => 'Venue rejected successfully.',
+                'data' => $data,
+            ], 200);
+        
+        } catch (\Exception $e) {
+            if (DB::transactionLevel() > 0) {
+                DB::rollBack();
+            }
+
+            return response()->json([
+                'success' => false,
+                'status_code' => 500,
+                'message' => 'Something went wrong. ' . $e->getMessage(),
+            ], 500);
+        }
     }
 
-    public function export(Request $request): StreamedResponse
+    public function export(Request $request)
     {
-        $validated = $request->validate([
-            'format' => ['nullable', 'in:csv,xls,excel'],
-            'status' => ['nullable', 'in:all,pending,approved,rejected'],
-            'merchant_id' => ['nullable', 'integer', 'exists:merchants,id'],
-        ]);
+        try {
+            $validated = $request->validate([
+                'format' => ['nullable', 'in:csv,xls,excel'],
+                'status' => ['nullable', 'in:all,pending,approved,rejected'],
+                'merchant_id' => ['nullable', 'integer', 'exists:merchants,id'],
+            ]);
 
-        $rows = Venue::with(['merchant'])
-            ->when(($validated['status'] ?? 'all') !== 'all', fn ($query) => $query->where('approval_status', $validated['status']))
-            ->when(! empty($validated['merchant_id']), fn ($query) => $query->where('merchant_id', $validated['merchant_id']))
-            ->latest('created_at')
-            ->get()
-            ->map(fn (Venue $venue) => $this->exportRow($venue))
-            ->values()
-            ->all();
+            $rows = Venue::with(['merchant'])
+                ->when(($validated['status'] ?? 'all') !== 'all', fn ($query) => $query->where('approval_status', $validated['status']))
+                ->when(! empty($validated['merchant_id']), fn ($query) => $query->where('merchant_id', $validated['merchant_id']))
+                ->latest('created_at')
+                ->get()
+                ->map(fn (Venue $venue) => $this->exportRow($venue))
+                ->values()
+                ->all();
 
-        $format = $validated['format'] ?? 'csv';
+            $format = $validated['format'] ?? 'csv';
 
-        if (in_array($format, ['xls', 'excel'], true)) {
-            return $this->excelResponse($rows);
+            if (in_array($format, ['xls', 'excel'], true)) {
+                return $this->excelResponse($rows);
+            }
+
+            return $this->csvResponse($rows);
+        
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'status_code' => 500,
+                'message' => 'Something went wrong. ' . $e->getMessage(),
+            ], 500);
         }
-
-        return $this->csvResponse($rows);
     }
 
     private function validateVenuePayload(Request $request, bool $creating, ?Venue $venue = null): array

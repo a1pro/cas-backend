@@ -13,8 +13,10 @@ use App\Services\Affiliate\AffiliateTrackingService;
 use App\Services\Merchant\MerchantBusinessRuleService;
 use App\Services\Tag\TagButtonService;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Mail;
+use Illuminate\Validation\ValidationException;
 
 class AuthController extends BaseController
 {
@@ -25,85 +27,332 @@ class AuthController extends BaseController
 
     public function register(Request $request)
     {
-        $validated = $request->validate([
-            'name' => ['required', 'string', 'max:255'],
-            'email' => ['required', 'email', 'max:255', 'unique:users,email'],
-            'password' => ['required', 'string', 'min:6', 'confirmed'],
-            'role' => ['nullable', 'in:user,merchant'],
-            'business_name' => ['nullable', 'string', 'max:255'],
-            'business_type' => ['nullable', 'string', 'max:100'],
-            'contact_phone' => ['nullable', 'string', 'max:50'],
-            'postcode' => ['nullable', 'string', 'max:20'],
-            'latitude' => ['nullable', 'numeric', 'between:-90,90'],
-            'longitude' => ['nullable', 'numeric', 'between:-180,180'],
-            'referral_code' => ['nullable', 'string', 'max:24', 'exists:affiliate_profiles,share_code'],
-        ]);
+        try {
+            DB::beginTransaction();
 
-        $role = $validated['role'] ?? 'user';
+            $validated = $request->validate([
+                'name' => ['required', 'string', 'max:255'],
+                'email' => ['required', 'email', 'max:255', 'unique:users,email'],
+                'password' => ['required', 'string', 'min:6', 'confirmed'],
+                'role' => ['nullable', 'in:user,merchant'],
+                'business_name' => ['nullable', 'string', 'max:255'],
+                'business_type' => ['nullable', 'string', 'max:100'],
+                'contact_phone' => ['nullable', 'string', 'max:50'],
+                'postcode' => ['nullable', 'string', 'max:20'],
+                'latitude' => ['nullable', 'numeric', 'between:-90,90'],
+                'longitude' => ['nullable', 'numeric', 'between:-180,180'],
+                'referral_code' => ['nullable', 'string', 'max:24', 'exists:affiliate_profiles,share_code'],
+            ]);
 
-        if ($role === 'merchant') {
-            return $this->registerMerchant(new Request([
-                'owner_name' => $validated['name'],
+            $role = $validated['role'] ?? 'user';
+
+            if ($role === 'merchant') {
+                $merchantRequest = new Request([
+                    'owner_name' => $validated['name'],
+                    'email' => $validated['email'],
+                    'password' => $validated['password'],
+                    'password_confirmation' => $request->input('password_confirmation'),
+                    'business_name' => $validated['business_name'] ?? $validated['name'],
+                    'business_type' => $validated['business_type'] ?? 'club',
+                    'contact_phone' => $validated['contact_phone'] ?? null,
+                    'postcode' => $request->input('postcode'),
+                    'latitude' => $validated['latitude'] ?? null,
+                    'longitude' => $validated['longitude'] ?? null,
+                ]);
+
+                $data = $this->createMerchantRegistration($merchantRequest);
+
+                DB::commit();
+
+                return response()->json([
+                    'success' => true,
+                    'status_code' => 200,
+                    'message' => 'Operation completed successfully',
+                    'data' => $data,
+                ], 200);
+            }
+
+            $user = User::create([
+                'name' => $validated['name'],
                 'email' => $validated['email'],
                 'password' => $validated['password'],
-                'password_confirmation' => $request->input('password_confirmation'),
-                'business_name' => $validated['business_name'] ?? $validated['name'],
-                'business_type' => $validated['business_type'] ?? 'club',
-                'contact_phone' => $validated['contact_phone'] ?? null,
-                'postcode' => $request->input('postcode'),
-            ]));
+                'phone' => $validated['contact_phone'] ?? null,
+                'postcode' => isset($validated['postcode']) ? strtoupper(trim((string) $validated['postcode'])) : null,
+                'latitude' => $validated['latitude'] ?? null,
+                'longitude' => $validated['longitude'] ?? null,
+                'is_active' => true,
+                'email_verified_at' => now(),
+                'role' => 'user',
+            ]);
+
+            UserRole::create([
+                'user_id' => $user->id,
+                'role' => 'user',
+                'assigned_at' => now(),
+            ]);
+
+            if (! empty($validated['referral_code'])) {
+                app(AffiliateTrackingService::class)->attachReferredUser($user, $validated['referral_code']);
+            }
+
+            $token = $user->createToken('auth_token')->plainTextToken;
+
+            $data = [
+                'token' => $token,
+                'user' => $this->profilePayload($user),
+            ];
+
+            DB::commit();
+
+            return response()->json([
+                'success' => true,
+                'status_code' => 200,
+                'message' => 'Operation completed successfully',
+                'data' => $data,
+            ], 200);
+        } catch (ValidationException $e) {
+            if (DB::transactionLevel() > 0) {
+                DB::rollBack();
+            }
+
+            return response()->json([
+                'success' => false,
+                'status_code' => 422,
+                'message' => $e->getMessage(),
+                'errors' => $e->errors(),
+            ], 422);
+        } catch (\Exception $e) {
+            if (DB::transactionLevel() > 0) {
+                DB::rollBack();
+            }
+
+            return response()->json([
+                'success' => false,
+                'status_code' => 500,
+                'message' => 'Something went wrong. ' . $e->getMessage(),
+            ], 500);
         }
-
-        $user = User::create([
-            'name' => $validated['name'],
-            'email' => $validated['email'],
-            'password' => $validated['password'],
-            'phone' => $validated['contact_phone'] ?? null,
-            'postcode' => isset($validated['postcode']) ? strtoupper(trim((string) $validated['postcode'])) : null,
-            'latitude' => $validated['latitude'] ?? null,
-            'longitude' => $validated['longitude'] ?? null,
-            'is_active' => true,
-            'email_verified_at' => now(),
-            'role' => 'user',
-        ]);
-
-        UserRole::create([
-            'user_id' => $user->id,
-            'role' => 'user',
-            'assigned_at' => now(),
-        ]);
-
-        if (! empty($validated['referral_code'])) {
-            app(AffiliateTrackingService::class)->attachReferredUser($user, $validated['referral_code']);
-        }
-
-        $token = $user->createToken('auth_token')->plainTextToken;
-
-        return $this->success([
-            'token' => $token,
-            'user' => $this->profilePayload($user),
-        ], 'Registered successfully', 201);
     }
 
     public function merchantEligibility(Request $request)
     {
-        $validated = $request->validate([
-            'business_name' => ['nullable', 'string', 'max:255'],
-            'business_type' => ['nullable', 'in:club,bar,restaurant,takeaway,cafe'],
-            'address' => ['nullable', 'string', 'max:255'],
-            'city' => ['nullable', 'string', 'max:100'],
-            'postcode' => ['nullable', 'string', 'max:20'],
-            'venue_description' => ['nullable', 'string', 'max:1000'],
-            'requested_plan' => ['nullable', 'in:free_trial,payg'],
-        ]);
+        try {
+            DB::beginTransaction();
 
-        return $this->success(
-            $this->merchantBusinessRuleService->evaluateRegistration($validated),
-            'Merchant plan eligibility checked successfully.'
-        );
+            $validated = $request->validate([
+                'business_name' => ['nullable', 'string', 'max:255'],
+                'business_type' => ['nullable', 'in:club,bar,restaurant,takeaway,cafe'],
+                'address' => ['nullable', 'string', 'max:255'],
+                'city' => ['nullable', 'string', 'max:100'],
+                'postcode' => ['nullable', 'string', 'max:20'],
+                'venue_description' => ['nullable', 'string', 'max:1000'],
+                'requested_plan' => ['nullable', 'in:free_trial,payg'],
+            ]);
+
+            $data = $this->merchantBusinessRuleService->evaluateRegistration($validated);
+
+            DB::commit();
+
+            return response()->json([
+                'success' => true,
+                'status_code' => 200,
+                'message' => 'Operation completed successfully',
+                'data' => $data,
+            ], 200);
+        } catch (ValidationException $e) {
+            if (DB::transactionLevel() > 0) {
+                DB::rollBack();
+            }
+
+            return response()->json([
+                'success' => false,
+                'status_code' => 422,
+                'message' => $e->getMessage(),
+                'errors' => $e->errors(),
+            ], 422);
+        } catch (\Exception $e) {
+            if (DB::transactionLevel() > 0) {
+                DB::rollBack();
+            }
+
+            return response()->json([
+                'success' => false,
+                'status_code' => 500,
+                'message' => 'Something went wrong. ' . $e->getMessage(),
+            ], 500);
+        }
     }
 
     public function registerMerchant(Request $request)
+    {
+        try {
+            DB::beginTransaction();
+
+            $data = $this->createMerchantRegistration($request);
+
+            DB::commit();
+
+            return response()->json([
+                'success' => true,
+                'status_code' => 200,
+                'message' => 'Operation completed successfully',
+                'data' => $data,
+            ], 200);
+        } catch (ValidationException $e) {
+            if (DB::transactionLevel() > 0) {
+                DB::rollBack();
+            }
+
+            return response()->json([
+                'success' => false,
+                'status_code' => 422,
+                'message' => $e->getMessage(),
+                'errors' => $e->errors(),
+            ], 422);
+        } catch (\Exception $e) {
+            if (DB::transactionLevel() > 0) {
+                DB::rollBack();
+            }
+
+            return response()->json([
+                'success' => false,
+                'status_code' => 500,
+                'message' => 'Something went wrong. ' . $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    public function login(Request $request)
+    {
+        try {
+            DB::beginTransaction();
+
+            $validated = $request->validate([
+                'login' => ['required', 'string'],
+                'password' => ['required', 'string'],
+            ]);
+
+            $loginValue = trim($validated['login']);
+            $user = User::query()
+                ->where('email', $loginValue)
+                ->orWhere('phone', $loginValue)
+                ->first();
+
+            if (! $user || ! Hash::check($validated['password'], $user->password)) {
+                DB::rollBack();
+
+                return response()->json([
+                    'success' => false,
+                    'status_code' => 401,
+                    'message' => '1Invalid credentials',
+                ], 401);
+            }
+
+            if (! $user->is_active) {
+                DB::rollBack();
+
+                return response()->json([
+                    'success' => false,
+                    'status_code' => 403,
+                    'message' => 'Your account is waiting for admin approval.',
+                    'data' => [
+                        'approval_required' => true,
+                        'role' => $user->primaryRole(),
+                    ],
+                ], 403);
+            }
+
+            $user->update(['last_login_at' => now()]);
+            $token = $user->createToken('auth_token')->plainTextToken;
+
+            $data = [
+                'token' => $token,
+                'user' => $this->profilePayload($user),
+            ];
+
+            DB::commit();
+
+            return response()->json([
+                'success' => true,
+                'status_code' => 200,
+                'message' => 'Operation completed successfully',
+                'data' => $data,
+            ], 200);
+        } catch (ValidationException $e) {
+            if (DB::transactionLevel() > 0) {
+                DB::rollBack();
+            }
+
+            return response()->json([
+                'success' => false,
+                'status_code' => 422,
+                'message' => $e->getMessage(),
+                'errors' => $e->errors(),
+            ], 422);
+        } catch (\Exception $e) {
+            if (DB::transactionLevel() > 0) {
+                DB::rollBack();
+            }
+
+            return response()->json([
+                'success' => false,
+                'status_code' => 500,
+                'message' => 'Something went wrong. ' . $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    public function me(Request $request)
+    {
+        try {
+            $data = $this->profilePayload($request->user());
+
+            return response()->json([
+                'success' => true,
+                'status_code' => 200,
+                'message' => 'Operation completed successfully',
+                'data' => $data,
+            ], 200);
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'status_code' => 500,
+                'message' => 'Something went wrong. ' . $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    public function logout(Request $request)
+    {
+        try {
+            DB::beginTransaction();
+
+            $request->user()->currentAccessToken()?->delete();
+
+            $data = [];
+
+            DB::commit();
+
+            return response()->json([
+                'success' => true,
+                'status_code' => 200,
+                'message' => 'Operation completed successfully',
+                'data' => $data,
+            ], 200);
+        } catch (\Exception $e) {
+            if (DB::transactionLevel() > 0) {
+                DB::rollBack();
+            }
+
+            return response()->json([
+                'success' => false,
+                'status_code' => 500,
+                'message' => 'Something went wrong. ' . $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    private function createMerchantRegistration(Request $request): array
     {
         $validated = $request->validate([
             'owner_name' => ['required', 'string', 'max:255'],
@@ -206,7 +455,7 @@ class AuthController extends BaseController
             }
         }
 
-        return $this->success([
+        return [
             'merchant_id' => $merchant->id,
             'status' => 'pending_approval',
             'onboarding_plan' => $eligibility['resolved_plan'],
@@ -217,52 +466,7 @@ class AuthController extends BaseController
                 'status' => $tagAttribution->status,
                 'reward_credit' => '5.00',
             ] : null,
-        ], 'Merchant registration submitted successfully', 201);
-    }
-
-    public function login(Request $request)
-    {
-        $validated = $request->validate([
-            'login' => ['required', 'string'],
-            'password' => ['required', 'string'],
-        ]);
-
-        $loginValue = trim($validated['login']);
-        $user = User::query()
-            ->where('email', $loginValue)
-            ->orWhere('phone', $loginValue)
-            ->first();
-
-        if (! $user || ! Hash::check($validated['password'], $user->password)) {
-            return $this->error('Invalid credentials', 401);
-        }
-
-        if (! $user->is_active) {
-            return $this->error('Your account is waiting for admin approval.', 403, [
-                'approval_required' => true,
-                'role' => $user->primaryRole(),
-            ]);
-        }
-
-        $user->update(['last_login_at' => now()]);
-        $token = $user->createToken('auth_token')->plainTextToken;
-
-        return $this->success([
-            'token' => $token,
-            'user' => $this->profilePayload($user),
-        ], 'Logged in successfully');
-    }
-
-    public function me(Request $request)
-    {
-        return $this->success($this->profilePayload($request->user()));
-    }
-
-    public function logout(Request $request)
-    {
-        $request->user()->currentAccessToken()?->delete();
-
-        return $this->success([], 'Logged out successfully');
+        ];
     }
 
     private function isFoodBusiness(string $businessType): bool
