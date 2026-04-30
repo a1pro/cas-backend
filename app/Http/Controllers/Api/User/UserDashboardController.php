@@ -3,6 +3,9 @@
 namespace App\Http\Controllers\Api\User;
 
 use App\Http\Controllers\Api\BaseController;
+use App\Http\Requests\User\CreateUserVoucherRequest;
+use App\Http\Requests\User\UpdatePayoutProfileRequest;
+use App\Http\Requests\User\UpdateProviderProfileRequest;
 use App\Models\Venue;
 use App\Models\Voucher;
 use App\Services\Affiliate\AffiliateCommissionService;
@@ -35,6 +38,23 @@ class UserDashboardController extends BaseController
         try {
             $user = $request->user();
 
+            $totalVouchers = $user->vouchers()->count();
+            $redeemedVouchers = $user->vouchers()->where('status', 'redeemed')->count();
+            $issuedVouchers = $user->vouchers()->where('status', 'issued')->count();
+
+            $recentVouchers = Voucher::with(['venue', 'merchant'])
+                ->where('user_id', $user->id)
+                ->latest()
+                ->take(5)
+                ->get();
+
+            $providerProfile = $this->couponEligibilityService->profilePayload($user);
+            $recentBnplOrders = $this->bnplCheckoutService->payloadListForUser($user, 5);
+            $affiliate = $this->affiliateTrackingService->dashboardForUser($user);
+            $affiliateReports = $this->affiliateCommissionService->dashboardForUser($user, 8);
+            $payoutProfile = $this->stripeFinanceService->payoutProfilePayload($user);
+            $fraudStatus = $this->fraudPreventionService->statusForUser($user);
+
             $data = [
                 'user' => [
                     'name' => $user->name,
@@ -46,22 +66,18 @@ class UserDashboardController extends BaseController
                     'latitude' => $user->latitude !== null ? (float) $user->latitude : null,
                     'longitude' => $user->longitude !== null ? (float) $user->longitude : null,
                 ],
-                'provider_profile' => $this->couponEligibilityService->profilePayload($user),
+                'provider_profile' => $providerProfile,
                 'stats' => [
-                    'total_vouchers' => $user->vouchers()->count(),
-                    'redeemed_vouchers' => $user->vouchers()->where('status', 'redeemed')->count(),
-                    'issued_vouchers' => $user->vouchers()->where('status', 'issued')->count(),
+                    'total_vouchers' => $totalVouchers,
+                    'redeemed_vouchers' => $redeemedVouchers,
+                    'issued_vouchers' => $issuedVouchers,
                 ],
-                'recent_vouchers' => Voucher::with(['venue', 'merchant'])
-                    ->where('user_id', $user->id)
-                    ->latest()
-                    ->take(5)
-                    ->get(),
-                'recent_bnpl_orders' => $this->bnplCheckoutService->payloadListForUser($user, 5),
-                'affiliate' => $this->affiliateTrackingService->dashboardForUser($user),
-                'affiliate_reports' => $this->affiliateCommissionService->dashboardForUser($user, 8),
-                'payout_profile' => $this->stripeFinanceService->payoutProfilePayload($user),
-                'fraud' => $this->fraudPreventionService->statusForUser($user),
+                'recent_vouchers' => $recentVouchers,
+                'recent_bnpl_orders' => $recentBnplOrders,
+                'affiliate' => $affiliate,
+                'affiliate_reports' => $affiliateReports,
+                'payout_profile' => $payoutProfile,
+                'fraud' => $fraudStatus,
             ];
 
             return response()->json([
@@ -79,15 +95,12 @@ class UserDashboardController extends BaseController
         }
     }
 
-    public function updateProviderProfile(Request $request)
+    public function updateProviderProfile(UpdateProviderProfileRequest $request)
     {
         try {
             DB::beginTransaction();
 
-            $validated = $request->validate([
-                'is_uber_existing_customer' => ['nullable', 'boolean'],
-                'is_ubereats_existing_customer' => ['nullable', 'boolean'],
-            ]);
+            $validated = $request->validated();
 
             $user = $request->user();
             $user->update([
@@ -96,8 +109,10 @@ class UserDashboardController extends BaseController
                 'provider_profile_updated_at' => now(),
             ]);
 
+            $providerProfile = $this->couponEligibilityService->profilePayload($user->fresh());
+
             $data = [
-                'provider_profile' => $this->couponEligibilityService->profilePayload($user->fresh()),
+                'provider_profile' => $providerProfile,
             ];
 
             DB::commit();
@@ -132,23 +147,21 @@ class UserDashboardController extends BaseController
         }
     }
 
-    public function updatePayoutProfile(Request $request)
+    public function updatePayoutProfile(UpdatePayoutProfileRequest $request)
     {
         try {
             DB::beginTransaction();
 
-            $validated = $request->validate([
-                'payout_email' => ['nullable', 'email', 'max:255'],
-                'country_code' => ['nullable', 'string', 'size:2'],
-                'currency' => ['nullable', 'string', 'size:3'],
-            ]);
+            $validated = $request->validated();
 
             $this->stripeFinanceService->updatePayoutProfile($request->user(), $validated);
 
+            $payoutProfile = $this->stripeFinanceService->payoutProfilePayload(
+                $request->user()->fresh(['affiliateProfile', 'affiliatePayoutProfile'])
+            );
+
             $data = [
-                'payout_profile' => $this->stripeFinanceService->payoutProfilePayload(
-                    $request->user()->fresh(['affiliateProfile', 'affiliatePayoutProfile'])
-                ),
+                'payout_profile' => $payoutProfile,
             ];
 
             DB::commit();
@@ -189,11 +202,12 @@ class UserDashboardController extends BaseController
             DB::beginTransaction();
 
             $profile = $this->stripeFinanceService->startAffiliateOnboarding($request->user());
+            $payoutProfile = $this->stripeFinanceService->payoutProfilePayload(
+                $request->user()->fresh(['affiliateProfile', 'affiliatePayoutProfile'])
+            );
 
             $data = [
-                'payout_profile' => $this->stripeFinanceService->payoutProfilePayload(
-                    $request->user()->fresh(['affiliateProfile', 'affiliatePayoutProfile'])
-                ),
+                'payout_profile' => $payoutProfile,
                 'profile_status' => $profile->onboarding_status,
             ];
 
@@ -224,11 +238,12 @@ class UserDashboardController extends BaseController
             DB::beginTransaction();
 
             $profile = $this->stripeFinanceService->simulateAffiliateApproval($request->user());
+            $payoutProfile = $this->stripeFinanceService->payoutProfilePayload(
+                $request->user()->fresh(['affiliateProfile', 'affiliatePayoutProfile'])
+            );
 
             $data = [
-                'payout_profile' => $this->stripeFinanceService->payoutProfilePayload(
-                    $request->user()->fresh(['affiliateProfile', 'affiliatePayoutProfile'])
-                ),
+                'payout_profile' => $payoutProfile,
                 'profile_status' => $profile->onboarding_status,
             ];
 
@@ -272,11 +287,13 @@ class UserDashboardController extends BaseController
                 ], 422);
             }
 
+            $payoutProfile = $this->stripeFinanceService->payoutProfilePayload(
+                $request->user()->fresh(['affiliateProfile', 'affiliatePayoutProfile'])
+            );
+
             $data = [
                 'payout_run' => $run,
-                'payout_profile' => $this->stripeFinanceService->payoutProfilePayload(
-                    $request->user()->fresh(['affiliateProfile', 'affiliatePayoutProfile'])
-                ),
+                'payout_profile' => $payoutProfile,
             ];
 
             DB::commit();
@@ -319,12 +336,14 @@ class UserDashboardController extends BaseController
                 ], 422);
             }
 
+            $payoutProfile = $this->stripeFinanceService->payoutProfilePayload(
+                $request->user()->fresh(['affiliateProfile', 'affiliatePayoutProfile'])
+            );
+
             $data = [
                 'payout_run' => $result['run'],
                 'already_processed' => $result['already_processed'] ?? false,
-                'payout_profile' => $this->stripeFinanceService->payoutProfilePayload(
-                    $request->user()->fresh(['affiliateProfile', 'affiliatePayoutProfile'])
-                ),
+                'payout_profile' => $payoutProfile,
             ];
 
             DB::commit();
@@ -405,16 +424,12 @@ class UserDashboardController extends BaseController
         }
     }
 
-    public function createVoucher(Request $request)
+    public function createVoucher(CreateUserVoucherRequest $request)
     {
         try {
             DB::beginTransaction();
 
-            $validated = $request->validate([
-                'venue_id' => ['required', 'exists:venues,id'],
-                'promo_message' => ['nullable', 'string', 'max:80'],
-                'basket_total' => ['nullable', 'numeric', 'min:0'],
-            ]);
+            $validated = $request->validated();
 
             $venue = Venue::with('merchant')->findOrFail($validated['venue_id']);
 

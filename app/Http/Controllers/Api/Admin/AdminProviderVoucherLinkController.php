@@ -3,6 +3,12 @@
 namespace App\Http\Controllers\Api\Admin;
 
 use App\Http\Controllers\Api\BaseController;
+use App\Http\Requests\Admin\ExportProviderVoucherLinkRequest;
+use App\Http\Requests\Admin\ListProviderVoucherLinkRequest;
+use App\Http\Requests\Admin\StoreProviderVoucherLinkRequest;
+use App\Http\Requests\Admin\UpdateProviderVoucherLinkRequest;
+use App\Http\Requests\Admin\UploadProviderVoucherLinkRequest;
+use App\Http\Requests\Admin\VenueExportProviderVoucherLinkRequest;
 use App\Models\ProviderVoucherLink;
 use App\Services\Voucher\ProviderVoucherLinkService;
 use Illuminate\Http\Request;
@@ -15,20 +21,10 @@ class AdminProviderVoucherLinkController extends BaseController
     ) {
     }
 
-    public function index(Request $request)
+    public function index(ListProviderVoucherLinkRequest $request)
     {
         try {
-            $this->normalizeBooleanInput($request, 'active_only');
-
-            $validated = $request->validate([
-                'limit' => ['nullable', 'integer', 'min:1', 'max:200'],
-                'page' => ['nullable', 'integer', 'min:1'],
-                'per_page' => ['nullable', 'integer', 'min:1', 'max:100'],
-                'merchant_id' => ['nullable', 'exists:merchants,id'],
-                'provider' => ['nullable', 'in:uber,ubereats'],
-                'active_only' => ['nullable', 'boolean'],
-                'search' => ['nullable', 'string', 'max:120'],
-            ]);
+            $validated = $request->validated();
 
             if ($request->has('page') || $request->has('per_page') || $request->has('search') || $request->has('provider') || $request->has('merchant_id') || $request->has('active_only')) {
                 $data = $this->providerVoucherLinkService->paginatedPayload($validated);
@@ -41,9 +37,12 @@ class AdminProviderVoucherLinkController extends BaseController
                 ], 200);
             }
 
+            $summary = $this->providerVoucherLinkService->summary();
+            $items = $this->providerVoucherLinkService->listPayloads((int) ($validated['limit'] ?? 25));
+
             $data = [
-                    'summary' => $this->providerVoucherLinkService->summary(),
-                    'items' => $this->providerVoucherLinkService->listPayloads((int) ($validated['limit'] ?? 25)),
+                    'summary' => $summary,
+                    'items' => $items,
                 ];
 
             return response()->json([
@@ -83,19 +82,10 @@ class AdminProviderVoucherLinkController extends BaseController
         }
     }
 
-    public function export(Request $request)
+    public function export(ExportProviderVoucherLinkRequest $request)
     {
         try {
-            $this->normalizeBooleanInput($request, 'active_only');
-
-            $validated = $request->validate([
-                'limit' => ['nullable', 'integer', 'min:1', 'max:1000'],
-                'merchant_id' => ['nullable', 'exists:merchants,id'],
-                'provider' => ['nullable', 'in:uber,ubereats'],
-                'active_only' => ['nullable', 'boolean'],
-                'source_label' => ['nullable', 'string', 'max:120'],
-                'import_batch_code' => ['nullable', 'string', 'max:40'],
-            ]);
+            $validated = $request->validated();
 
             $data = $this->providerVoucherLinkService->exportPayload($validated);
 
@@ -115,17 +105,10 @@ class AdminProviderVoucherLinkController extends BaseController
         }
     }
 
-    public function venueExport(Request $request)
+    public function venueExport(VenueExportProviderVoucherLinkRequest $request)
     {
         try {
-            $this->normalizeBooleanInput($request, 'missing_only');
-
-            $validated = $request->validate([
-                'limit' => ['nullable', 'integer', 'min:1', 'max:2000'],
-                'merchant_id' => ['nullable', 'exists:merchants,id'],
-                'provider' => ['nullable', 'in:uber,ubereats'],
-                'missing_only' => ['nullable', 'boolean'],
-            ]);
+            $validated = $request->validated();
 
             $data = $this->providerVoucherLinkService->venueVoucherCreationPayload($validated);
 
@@ -145,17 +128,19 @@ class AdminProviderVoucherLinkController extends BaseController
         }
     }
 
-    public function store(Request $request)
+    public function store(StoreProviderVoucherLinkRequest $request)
     {
         try {
             DB::beginTransaction();
 
-            $validated = $this->validateProviderVoucherLink($request);
+            $validated = $request->validated();
             $record = $this->providerVoucherLinkService->create($validated, $request->user());
+            $recordPayload = $this->providerVoucherLinkService->payload($record->fresh(['merchant', 'venue', 'creator']));
+            $summary = $this->providerVoucherLinkService->summary();
 
             $data = [
-                    'record' => $this->providerVoucherLinkService->payload($record->fresh(['merchant', 'venue', 'creator'])),
-                    'summary' => $this->providerVoucherLinkService->summary(),
+                    'record' => $recordPayload,
+                    'summary' => $summary,
                 ];
 
             DB::commit();
@@ -180,17 +165,19 @@ class AdminProviderVoucherLinkController extends BaseController
         }
     }
 
-    public function update(Request $request, ProviderVoucherLink $providerVoucherLink)
+    public function update(UpdateProviderVoucherLinkRequest $request, ProviderVoucherLink $providerVoucherLink)
     {
         try {
             DB::beginTransaction();
 
-            $validated = $this->validateProviderVoucherLink($request, false);
+            $validated = $request->validated();
             $record = $this->providerVoucherLinkService->update($providerVoucherLink, $validated, $request->user());
+            $recordPayload = $this->providerVoucherLinkService->payload($record->fresh(['merchant', 'venue', 'creator']));
+            $summary = $this->providerVoucherLinkService->summary();
 
             $data = [
-                    'record' => $this->providerVoucherLinkService->payload($record->fresh(['merchant', 'venue', 'creator'])),
-                    'summary' => $this->providerVoucherLinkService->summary(),
+                    'record' => $recordPayload,
+                    'summary' => $summary,
                 ];
 
             DB::commit();
@@ -222,11 +209,12 @@ class AdminProviderVoucherLinkController extends BaseController
 
             $id = $providerVoucherLink->id;
             $providerVoucherLink->delete();
+            $summary = $this->providerVoucherLinkService->summary();
 
             $data = [
                     'deleted' => true,
                     'id' => $id,
-                    'summary' => $this->providerVoucherLinkService->summary(),
+                    'summary' => $summary,
                 ];
 
             DB::commit();
@@ -251,52 +239,28 @@ class AdminProviderVoucherLinkController extends BaseController
         }
     }
 
-    public function upload(Request $request)
+    public function upload(UploadProviderVoucherLinkRequest $request)
     {
         try {
             DB::beginTransaction();
 
-            if ($request->has('is_active')) {
-                $request->merge([
-                    'is_active' => in_array(strtolower((string) $request->input('is_active')), ['1', 'true', 'yes', 'on'], true),
-                ]);
-            }
-
-            $validated = $request->validate([
-                'file' => ['required', 'file', 'mimes:csv,txt,xlsx', 'max:4096'],
-                'merchant_id' => ['nullable', 'exists:merchants,id'],
-                'venue_id' => ['nullable', 'exists:venues,id'],
-                'venue_code' => ['nullable', 'alpha_num', 'size:6'],
-                'provider' => ['nullable', 'in:uber,ubereats'],
-                'offer_type' => ['nullable', 'in:food,ride,dual_choice'],
-                'ride_trip_type' => ['nullable', 'in:to_venue,to_and_from'],
-                'voucher_amount' => ['nullable', 'numeric', 'min:0'],
-                'minimum_order' => ['nullable', 'numeric', 'min:0'],
-                'location_postcode' => ['nullable', 'string', 'max:16'],
-                'start_time' => ['nullable', 'date_format:H:i'],
-                'end_time' => ['nullable', 'date_format:H:i'],
-                'valid_from' => ['nullable', 'date'],
-                'valid_until' => ['nullable', 'date', 'after_or_equal:valid_from'],
-                'is_active' => ['nullable', 'boolean'],
-                'circulation_mode' => ['nullable', 'in:shared_sequence,unique_individual'],
-                'max_issue_count' => ['nullable', 'integer', 'min:1', 'max:100000'],
-                'source_label' => ['nullable', 'string', 'max:120'],
-                'notes' => ['nullable', 'string', 'max:500'],
-            ]);
+            $validated = $request->validated();
 
             $records = $this->providerVoucherLinkService->importFromFile(
                 $request->file('file'),
                 $request->user(),
                 $validated
             );
+            $summary = $this->providerVoucherLinkService->summary();
+            $items = collect($records)
+                ->map(fn ($record) => $this->providerVoucherLinkService->payload($record->fresh(['merchant', 'venue', 'creator'])))
+                ->values()
+                ->all();
 
             $data = [
                     'count' => count($records),
-                    'summary' => $this->providerVoucherLinkService->summary(),
-                    'items' => collect($records)
-                        ->map(fn ($record) => $this->providerVoucherLinkService->payload($record->fresh(['merchant', 'venue', 'creator'])))
-                        ->values()
-                        ->all(),
+                    'summary' => $summary,
+                    'items' => $items,
                 ];
 
             DB::commit();
@@ -321,51 +285,4 @@ class AdminProviderVoucherLinkController extends BaseController
         }
     }
 
-    private function validateProviderVoucherLink(Request $request, bool $creating = true): array
-    {
-        $this->normalizeBooleanInput($request, 'is_active');
-
-        return $request->validate([
-            'merchant_id' => ['nullable', 'exists:merchants,id'],
-            'venue_id' => ['nullable', 'exists:venues,id'],
-            'venue_code' => ['nullable', 'alpha_num', 'size:6'],
-            'provider' => [$creating ? 'required' : 'sometimes', 'in:uber,ubereats'],
-            'link_url' => [$creating ? 'required' : 'sometimes', 'url', 'max:4000'],
-            'offer_type' => [$creating ? 'required' : 'sometimes', 'in:food,ride,dual_choice'],
-            'ride_trip_type' => ['nullable', 'in:to_venue,to_and_from'],
-            'voucher_amount' => ['nullable', 'numeric', 'min:0'],
-            'minimum_order' => ['nullable', 'numeric', 'min:0'],
-            'location_postcode' => ['nullable', 'string', 'max:16'],
-            'start_time' => ['nullable', 'date_format:H:i'],
-            'end_time' => ['nullable', 'date_format:H:i'],
-            'valid_from' => ['nullable', 'date'],
-            'valid_until' => ['nullable', 'date', 'after_or_equal:valid_from'],
-            'is_active' => ['nullable', 'boolean'],
-            'circulation_mode' => ['nullable', 'in:shared_sequence,unique_individual'],
-            'max_issue_count' => ['nullable', 'integer', 'min:1', 'max:100000'],
-            'source_label' => ['nullable', 'string', 'max:120'],
-            'notes' => ['nullable', 'string', 'max:500'],
-        ]);
-    }
-
-    private function normalizeBooleanInput(Request $request, string $key): void
-    {
-        if (! $request->has($key)) {
-            return;
-        }
-
-        $value = $request->input($key);
-
-        if (is_bool($value)) {
-            return;
-        }
-
-        $normalized = filter_var($value, FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE);
-
-        if ($normalized !== null) {
-            $request->merge([
-                $key => $normalized,
-            ]);
-        }
-    }
 }

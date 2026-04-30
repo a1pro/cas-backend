@@ -3,6 +3,13 @@
 namespace App\Http\Controllers\Api\Admin;
 
 use App\Http\Controllers\Api\BaseController;
+use App\Http\Requests\Admin\AdminInformationIndexRequest;
+use App\Http\Requests\Admin\ApproveAdminInformationRequest;
+use App\Http\Requests\Admin\ExportAdminInformationRequest;
+use App\Http\Requests\Admin\PublishAdminInformationRequest;
+use App\Http\Requests\Admin\RejectAdminInformationRequest;
+use App\Http\Requests\Admin\StoreAdminInformationRequest;
+use App\Http\Requests\Admin\UpdateAdminInformationRequest;
 use App\Models\Merchant;
 use App\Models\Venue;
 use App\Models\User;
@@ -13,15 +20,10 @@ use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class AdminInformationController extends BaseController
 {
-    public function index(Request $request)
+    public function index(AdminInformationIndexRequest $request)
     {
         try {
-            $validated = $request->validate([
-                'status' => ['nullable', 'in:all,pending,approved,rejected'],
-                'merchant_id' => ['nullable', 'integer', 'exists:merchants,id'],
-                'search' => ['nullable', 'string', 'max:120'],
-                'limit' => ['nullable', 'integer', 'min:1', 'max:300'],
-            ]);
+            $validated = $request->validated();
 
             $query = Venue::with(['merchant.user']);
 
@@ -50,9 +52,12 @@ class AdminInformationController extends BaseController
                 ->limit((int) ($validated['limit'] ?? 100))
                 ->get();
 
+            $summary = $this->summary();
+            $venueItems = $venues->map(fn (Venue $venue) => $this->transformVenue($venue))->values();
+
             $data = [
-                    'summary' => $this->summary(),
-                    'items' => $venues->map(fn (Venue $venue) => $this->transformVenue($venue))->values(),
+                    'summary' => $summary,
+                    'items' => $venueItems,
                 ];
 
             return response()->json([
@@ -71,12 +76,12 @@ class AdminInformationController extends BaseController
         }
     }
 
-    public function store(Request $request)
+    public function store(StoreAdminInformationRequest $request)
     {
         try {
             DB::beginTransaction();
 
-            $validated = $this->validateVenuePayload($request, true);
+            $validated = $request->validated();
             $merchant = Merchant::with('user')->findOrFail($validated['merchant_id']);
             $status = $validated['approval_status'] ?? 'approved';
             $manualCode = $this->normaliseVenueCode($validated['venue_code'] ?? null);
@@ -110,9 +115,12 @@ class AdminInformationController extends BaseController
                 $this->approvalFields($status, $request->user()->id, null, $manualCode)
             ));
 
+            $venueData = $this->transformVenue($venue->fresh(['merchant.user']));
+            $summary = $this->summary();
+
             $data = [
-                    'venue' => $this->transformVenue($venue->fresh(['merchant.user'])),
-                    'summary' => $this->summary(),
+                    'venue' => $venueData,
+                    'summary' => $summary,
                 ];
 
             DB::commit();
@@ -137,12 +145,12 @@ class AdminInformationController extends BaseController
         }
     }
 
-    public function update(Request $request, Venue $venue)
+    public function update(UpdateAdminInformationRequest $request, Venue $venue)
     {
         try {
             DB::beginTransaction();
 
-            $validated = $this->validateVenuePayload($request, false, $venue);
+            $validated = $request->validated();
             $status = $validated['approval_status'] ?? $venue->approval_status ?? 'pending';
             $manualCode = $this->normaliseVenueCode($validated['venue_code'] ?? null);
 
@@ -179,9 +187,12 @@ class AdminInformationController extends BaseController
             $venue->fill($this->approvalFields($status, $request->user()->id, $venue, $manualCode));
             $venue->save();
 
+            $venueData = $this->transformVenue($venue->fresh(['merchant.user']));
+            $summary = $this->summary();
+
             $data = [
-                    'venue' => $this->transformVenue($venue->fresh(['merchant.user'])),
-                    'summary' => $this->summary(),
+                    'venue' => $venueData,
+                    'summary' => $summary,
                 ];
 
             DB::commit();
@@ -225,8 +236,10 @@ class AdminInformationController extends BaseController
 
             $venue->delete();
 
+            $summary = $this->summary();
+
             $data = [
-                    'summary' => $this->summary(),
+                    'summary' => $summary,
                 ];
 
             DB::commit();
@@ -251,7 +264,7 @@ class AdminInformationController extends BaseController
         }
     }
 
-    public function approve(Request $request, Venue $venue)
+    public function approve(ApproveAdminInformationRequest $request, Venue $venue)
     {
         try {
             DB::beginTransaction();
@@ -270,9 +283,7 @@ class AdminInformationController extends BaseController
                 ], 422);
             }
 
-            $validated = $request->validate([
-                'venue_code' => $this->venueCodeRules($venue, true),
-            ]);
+            $validated = $request->validated();
 
             $venue->update($this->approvalFields(
                 'approved',
@@ -281,9 +292,12 @@ class AdminInformationController extends BaseController
                 $this->normaliseVenueCode($validated['venue_code'] ?? null)
             ));
 
+            $venueData = $this->transformVenue($venue->fresh(['merchant.user']));
+            $summary = $this->summary();
+
             $data = [
-                    'venue' => $this->transformVenue($venue->fresh(['merchant.user'])),
-                    'summary' => $this->summary(),
+                    'venue' => $venueData,
+                    'summary' => $summary,
                 ];
 
             DB::commit();
@@ -308,7 +322,7 @@ class AdminInformationController extends BaseController
         }
     }
 
-    public function publish(Request $request, Venue $venue)
+    public function publish(PublishAdminInformationRequest $request, Venue $venue)
     {
         try {
             DB::beginTransaction();
@@ -327,9 +341,7 @@ class AdminInformationController extends BaseController
                 ], 422);
             }
 
-            $validated = $request->validate([
-                'venue_code' => $this->venueCodeRules($venue, true),
-            ]);
+            $validated = $request->validated();
 
             $venue->update($this->approvalFields(
                 'approved',
@@ -338,9 +350,12 @@ class AdminInformationController extends BaseController
                 $this->normaliseVenueCode($validated['venue_code'] ?? null)
             ));
 
+            $venueData = $this->transformVenue($venue->fresh(['merchant.user']));
+            $summary = $this->summary();
+
             $data = [
-                'venue' => $this->transformVenue($venue->fresh(['merchant.user'])),
-                'summary' => $this->summary(),
+                'venue' => $venueData,
+                'summary' => $summary,
             ];
 
             DB::commit();
@@ -364,14 +379,12 @@ class AdminInformationController extends BaseController
         }
     }
 
-    public function reject(Request $request, Venue $venue)
+    public function reject(RejectAdminInformationRequest $request, Venue $venue)
     {
         try {
             DB::beginTransaction();
 
-            $validated = $request->validate([
-                'reason' => ['nullable', 'string', 'max:1000'],
-            ]);
+            $validated = $request->validated();
 
             $venue->update([
                 'approval_status' => 'rejected',
@@ -382,9 +395,12 @@ class AdminInformationController extends BaseController
                 'rejection_reason' => $validated['reason'] ?? 'Rejected from admin information page.',
             ]);
 
+            $venueData = $this->transformVenue($venue->fresh(['merchant.user']));
+            $summary = $this->summary();
+
             $data = [
-                    'venue' => $this->transformVenue($venue->fresh(['merchant.user'])),
-                    'summary' => $this->summary(),
+                    'venue' => $venueData,
+                    'summary' => $summary,
                 ];
 
             DB::commit();
@@ -409,14 +425,10 @@ class AdminInformationController extends BaseController
         }
     }
 
-    public function export(Request $request)
+    public function export(ExportAdminInformationRequest $request)
     {
         try {
-            $validated = $request->validate([
-                'format' => ['nullable', 'in:csv,xls,excel'],
-                'status' => ['nullable', 'in:all,pending,approved,rejected'],
-                'merchant_id' => ['nullable', 'integer', 'exists:merchants,id'],
-            ]);
+            $validated = $request->validated();
 
             $rows = Venue::with(['merchant'])
                 ->when(($validated['status'] ?? 'all') !== 'all', fn ($query) => $query->where('approval_status', $validated['status']))
@@ -444,27 +456,6 @@ class AdminInformationController extends BaseController
         }
     }
 
-    private function validateVenuePayload(Request $request, bool $creating, ?Venue $venue = null): array
-    {
-        return $request->validate([
-            'merchant_id' => [$creating ? 'required' : 'sometimes', 'integer', 'exists:merchants,id'],
-            'name' => [$creating ? 'required' : 'sometimes', 'string', 'max:255'],
-            'category' => [$creating ? 'required' : 'sometimes', 'in:club,bar,restaurant,takeaway,cafe'],
-            'address' => ['nullable', 'string', 'max:255'],
-            'city' => ['nullable', 'string', 'max:120'],
-            'postcode' => [$creating ? 'required' : 'sometimes', 'string', 'max:16'],
-            'latitude' => ['nullable', 'numeric', 'between:-90,90'],
-            'longitude' => ['nullable', 'numeric', 'between:-180,180'],
-            'description' => ['nullable', 'string', 'max:1200'],
-            'promo_message' => ['nullable', 'string', 'max:500'],
-            'approval_status' => ['nullable', 'in:pending,approved,rejected'],
-            'venue_code' => $this->venueCodeRules($venue, false),
-            'offer_type' => ['nullable', 'in:ride,food,dual_choice,dual'],
-            'ride_trip_type' => ['nullable', 'in:to_venue,to_and_from'],
-            'offer_value' => ['nullable', 'numeric', 'min:0', 'max:999'],
-            'minimum_order' => ['nullable', 'numeric', 'min:0', 'max:9999'],
-        ]);
-    }
 
     private function normalisedVenuePayload(array $validated, ?Venue $venue = null): array
     {

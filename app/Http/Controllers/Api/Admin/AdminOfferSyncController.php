@@ -3,6 +3,9 @@
 namespace App\Http\Controllers\Api\Admin;
 
 use App\Http\Controllers\Api\BaseController;
+use App\Http\Requests\Admin\ListOfferSyncRequest;
+use App\Http\Requests\Admin\MarkOfferSyncedRequest;
+use App\Http\Requests\Admin\RejectOfferSyncRequest;
 use App\Models\OfferSyncRequest;
 use App\Services\Merchant\MerchantOfferSyncService;
 use Illuminate\Http\Request;
@@ -15,19 +18,18 @@ class AdminOfferSyncController extends BaseController
     ) {
     }
 
-    public function index(Request $request)
+    public function index(ListOfferSyncRequest $request)
     {
         try {
-            $validated = $request->validate([
-                'status' => ['nullable', 'in:all,pending,synced,rejected,superseded'],
-                'limit' => ['nullable', 'integer', 'min:1', 'max:100'],
-            ]);
+            $validated = $request->validated();
+
+            $items = $this->offerSyncService->listPayloads(
+                $validated['status'] ?? 'pending',
+                (int) ($validated['limit'] ?? 25)
+            );
 
             $data = [
-                    'items' => $this->offerSyncService->listPayloads(
-                        $validated['status'] ?? 'pending',
-                        (int) ($validated['limit'] ?? 25)
-                    ),
+                    'items' => $items,
                 ];
 
             return response()->json([
@@ -67,14 +69,12 @@ class AdminOfferSyncController extends BaseController
         }
     }
 
-    public function markSynced(Request $request, OfferSyncRequest $offerSyncRequest)
+    public function markSynced(MarkOfferSyncedRequest $request, OfferSyncRequest $offerSyncRequest)
     {
         try {
             DB::beginTransaction();
 
-            $validated = $request->validate([
-                'admin_notes' => ['nullable', 'string', 'max:500'],
-            ]);
+            $validated = $request->validated();
 
             if ($offerSyncRequest->status !== 'pending') {
                 if (DB::transactionLevel() > 0) {
@@ -89,10 +89,12 @@ class AdminOfferSyncController extends BaseController
             }
 
             $record = $this->offerSyncService->markSynced($offerSyncRequest, $validated['admin_notes'] ?? null);
+            $requestPayload = $this->offerSyncService->requestPayload($record);
+            $dashboard = $this->offerSyncService->adminDashboardPayload();
 
             $data = [
-                    'request' => $this->offerSyncService->requestPayload($record),
-                    'dashboard' => $this->offerSyncService->adminDashboardPayload(),
+                    'request' => $requestPayload,
+                    'dashboard' => $dashboard,
                 ];
 
             DB::commit();
@@ -117,14 +119,12 @@ class AdminOfferSyncController extends BaseController
         }
     }
 
-    public function reject(Request $request, OfferSyncRequest $offerSyncRequest)
+    public function reject(RejectOfferSyncRequest $request, OfferSyncRequest $offerSyncRequest)
     {
         try {
             DB::beginTransaction();
 
-            $validated = $request->validate([
-                'admin_notes' => ['nullable', 'string', 'max:500'],
-            ]);
+            $validated = $request->validated();
 
             if ($offerSyncRequest->status !== 'pending') {
                 if (DB::transactionLevel() > 0) {
@@ -139,10 +139,12 @@ class AdminOfferSyncController extends BaseController
             }
 
             $record = $this->offerSyncService->rejectAndRevert($offerSyncRequest, $validated['admin_notes'] ?? null);
+            $requestPayload = $this->offerSyncService->requestPayload($record);
+            $dashboard = $this->offerSyncService->adminDashboardPayload();
 
             $data = [
-                    'request' => $this->offerSyncService->requestPayload($record),
-                    'dashboard' => $this->offerSyncService->adminDashboardPayload(),
+                    'request' => $requestPayload,
+                    'dashboard' => $dashboard,
                 ];
 
             DB::commit();

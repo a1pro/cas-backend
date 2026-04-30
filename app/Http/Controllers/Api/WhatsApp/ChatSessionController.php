@@ -175,6 +175,43 @@ class ChatSessionController extends BaseController
             ? $this->resolveSelectedVenue($session, is_array($storedVenueResults) ? $storedVenueResults : [])
             : null;
 
+        $isAwaitingOrEnded = in_array($lastStep, ['awaiting_journey', 'awaiting_location', 'ended'], true);
+        $liveArea = $isAwaitingOrEnded ? null : data_get($session->metadata, 'last_live_area');
+        $resolvedLocation = $isAwaitingOrEnded ? null : data_get($session->metadata, 'last_resolved_location');
+
+        $messagesPayload = $messages->map(fn ($message) => [
+            'id' => $message->id,
+            'direction' => $message->direction,
+            'message_type' => $message->message_type,
+            'body' => $message->body,
+            'payload' => $message->payload,
+            'created_at' => $message->created_at,
+        ])->values();
+
+        $latestAssistantPayload = $latestAssistantMessage ? [
+            'id' => $latestAssistantMessage->id,
+            'direction' => $latestAssistantMessage->direction,
+            'message_type' => $latestAssistantMessage->message_type,
+            'body' => $latestAssistantMessage->body,
+            'payload' => $latestAssistantMessage->payload,
+            'created_at' => $latestAssistantMessage->created_at,
+        ] : null;
+
+        $weatherNote = $lastStep === 'showing_results'
+            ? ($lastVenueResults?->payload['weather_note'] ?? data_get($session->metadata, 'last_weather_note'))
+            : data_get($session->metadata, 'last_weather_note');
+        $budgetTips = $lastStep === 'showing_results'
+            ? ($lastVenueResults?->payload['budget_tips'] ?? data_get($session->metadata, 'last_budget_tips', []))
+            : data_get($session->metadata, 'last_budget_tips', []);
+        $weather = $lastStep === 'showing_results'
+            ? ($lastVenueResults?->payload['weather'] ?? data_get($session->metadata, 'last_weather'))
+            : data_get($session->metadata, 'last_weather');
+        $escalation = $lastStep === 'showing_results'
+            ? ($lastVenueResults?->payload['escalation'] ?? data_get($session->metadata, 'last_escalation'))
+            : data_get($session->metadata, 'last_escalation');
+        $objectionPrompt = $lastObjectionPrompt?->payload['prompt'] ?? data_get($session->metadata, 'last_objection_prompt');
+        $voucher = $session->last_step === 'voucher_issued' ? ($lastVoucher?->payload['voucher'] ?? null) : null;
+
         return [
             'id' => $session->id,
             'status' => $session->status,
@@ -185,47 +222,25 @@ class ChatSessionController extends BaseController
             'postcode' => $session->postcode,
             'latitude' => $session->latitude,
             'longitude' => $session->longitude,
-            'live_area' => in_array($lastStep, ['awaiting_journey', 'awaiting_location', 'ended'], true) ? null : data_get($session->metadata, 'last_live_area'),
-            'resolved_location' => in_array($lastStep, ['awaiting_journey', 'awaiting_location', 'ended'], true) ? null : data_get($session->metadata, 'last_resolved_location'),
+            'live_area' => $liveArea,
+            'resolved_location' => $resolvedLocation,
             'user' => [
                 'id' => $session->user?->id,
                 'name' => $session->user?->name,
                 'phone' => $session->user?->phone,
             ],
-            'messages' => $messages->map(fn ($message) => [
-                'id' => $message->id,
-                'direction' => $message->direction,
-                'message_type' => $message->message_type,
-                'body' => $message->body,
-                'payload' => $message->payload,
-                'created_at' => $message->created_at,
-            ])->values(),
-            'latest_assistant_message' => $latestAssistantMessage ? [
-                'id' => $latestAssistantMessage->id,
-                'direction' => $latestAssistantMessage->direction,
-                'message_type' => $latestAssistantMessage->message_type,
-                'body' => $latestAssistantMessage->body,
-                'payload' => $latestAssistantMessage->payload,
-                'created_at' => $latestAssistantMessage->created_at,
-            ] : null,
+            'messages' => $messagesPayload,
+            'latest_assistant_message' => $latestAssistantPayload,
             'venue_results' => $venueResults,
             'journey_previews' => $journeyPreviews,
-            'weather_note' => $lastStep === 'showing_results'
-                ? ($lastVenueResults?->payload['weather_note'] ?? data_get($session->metadata, 'last_weather_note'))
-                : data_get($session->metadata, 'last_weather_note'),
-            'budget_tips' => $lastStep === 'showing_results'
-                ? ($lastVenueResults?->payload['budget_tips'] ?? data_get($session->metadata, 'last_budget_tips', []))
-                : data_get($session->metadata, 'last_budget_tips', []),
-            'weather' => $lastStep === 'showing_results'
-                ? ($lastVenueResults?->payload['weather'] ?? data_get($session->metadata, 'last_weather'))
-                : data_get($session->metadata, 'last_weather'),
-            'escalation' => $lastStep === 'showing_results'
-                ? ($lastVenueResults?->payload['escalation'] ?? data_get($session->metadata, 'last_escalation'))
-                : data_get($session->metadata, 'last_escalation'),
-            'objection_prompt' => $lastObjectionPrompt?->payload['prompt'] ?? data_get($session->metadata, 'last_objection_prompt'),
+            'weather_note' => $weatherNote,
+            'budget_tips' => $budgetTips,
+            'weather' => $weather,
+            'escalation' => $escalation,
+            'objection_prompt' => $objectionPrompt,
             'selected_venue' => $selectedVenue,
             'selected_offer_usage' => data_get($session->metadata, 'selected_offer_usage'),
-            'voucher' => $session->last_step === 'voucher_issued' ? ($lastVoucher?->payload['voucher'] ?? null) : null,
+            'voucher' => $voucher,
         ];
     }
 

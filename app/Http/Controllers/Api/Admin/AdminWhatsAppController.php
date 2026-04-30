@@ -3,6 +3,10 @@
 namespace App\Http\Controllers\Api\Admin;
 
 use App\Http\Controllers\Api\BaseController;
+use App\Http\Requests\Admin\SimulateWhatsAppTemplateApprovalRequest;
+use App\Http\Requests\Admin\StarterPackWhatsAppTemplateRequest;
+use App\Http\Requests\Admin\StoreWhatsAppTemplateRequest;
+use App\Http\Requests\Admin\UpdateWhatsAppTemplateRequest;
 use App\Models\CasMessageTemplate;
 use App\Services\WhatsApp\WhatsAppTemplateService;
 use Illuminate\Http\Request;
@@ -35,20 +39,19 @@ class AdminWhatsAppController extends BaseController
         }
     }
 
-    public function starterPack(Request $request)
+    public function starterPack(StarterPackWhatsAppTemplateRequest $request)
     {
         try {
             DB::beginTransaction();
 
-            $validated = $request->validate([
-                'overwrite_existing' => ['nullable', 'boolean'],
-            ]);
+            $validated = $request->validated();
 
             $result = $this->whatsAppTemplateService->installStarterPack((bool) ($validated['overwrite_existing'] ?? false));
+            $dashboard = $this->whatsAppTemplateService->dashboardPayload();
 
             $data = [
                     'result' => $result,
-                    'dashboard' => $this->whatsAppTemplateService->dashboardPayload(),
+                    'dashboard' => $dashboard,
                 ];
 
             DB::commit();
@@ -73,29 +76,19 @@ class AdminWhatsAppController extends BaseController
         }
     }
 
-    public function store(Request $request)
+    public function store(StoreWhatsAppTemplateRequest $request)
     {
         try {
             DB::beginTransaction();
 
-            $validated = $request->validate([
-                'key' => ['required', 'string', 'max:100'],
-                'channel' => ['nullable', 'string', 'max:50'],
-                'journey_type' => ['nullable', 'string', 'max:50'],
-                'weather_condition' => ['nullable', 'string', 'max:50'],
-                'emoji' => ['nullable', 'string', 'max:12'],
-                'body' => ['required', 'string', 'max:1024'],
-                'is_active' => ['nullable', 'boolean'],
-                'sort_order' => ['nullable', 'integer', 'min:0', 'max:999'],
-                'category' => ['nullable', 'string', 'max:50'],
-                'language' => ['nullable', 'string', 'max:20'],
-            ]);
+            $validated = $request->validated();
 
             $template = $this->whatsAppTemplateService->create($validated);
+            $dashboard = $this->whatsAppTemplateService->dashboardPayload();
 
             $data = [
                     'template' => $template,
-                    'dashboard' => $this->whatsAppTemplateService->dashboardPayload(),
+                    'dashboard' => $dashboard,
                 ];
 
             DB::commit();
@@ -120,29 +113,19 @@ class AdminWhatsAppController extends BaseController
         }
     }
 
-    public function update(Request $request, CasMessageTemplate $template)
+    public function update(UpdateWhatsAppTemplateRequest $request, CasMessageTemplate $template)
     {
         try {
             DB::beginTransaction();
 
-            $validated = $request->validate([
-                'key' => ['sometimes', 'required', 'string', 'max:100'],
-                'channel' => ['nullable', 'string', 'max:50'],
-                'journey_type' => ['nullable', 'string', 'max:50'],
-                'weather_condition' => ['nullable', 'string', 'max:50'],
-                'emoji' => ['nullable', 'string', 'max:12'],
-                'body' => ['sometimes', 'required', 'string', 'max:1024'],
-                'is_active' => ['nullable', 'boolean'],
-                'sort_order' => ['nullable', 'integer', 'min:0', 'max:999'],
-                'category' => ['nullable', 'string', 'max:50'],
-                'language' => ['nullable', 'string', 'max:20'],
-            ]);
+            $validated = $request->validated();
 
             $updated = $this->whatsAppTemplateService->update($template, $validated);
+            $dashboard = $this->whatsAppTemplateService->dashboardPayload();
 
             $data = [
                     'template' => $updated,
-                    'dashboard' => $this->whatsAppTemplateService->dashboardPayload(),
+                    'dashboard' => $dashboard,
                 ];
 
             DB::commit();
@@ -173,10 +156,11 @@ class AdminWhatsAppController extends BaseController
             DB::beginTransaction();
 
             $updated = $this->whatsAppTemplateService->submitForApproval($template);
+            $dashboard = $this->whatsAppTemplateService->dashboardPayload();
 
             $data = [
                     'template' => $updated,
-                    'dashboard' => $this->whatsAppTemplateService->dashboardPayload(),
+                    'dashboard' => $dashboard,
                 ];
 
             DB::commit();
@@ -201,25 +185,23 @@ class AdminWhatsAppController extends BaseController
         }
     }
 
-    public function simulateApproval(Request $request, CasMessageTemplate $template)
+    public function simulateApproval(SimulateWhatsAppTemplateApprovalRequest $request, CasMessageTemplate $template)
     {
         try {
             DB::beginTransaction();
 
-            $validated = $request->validate([
-                'approval_status' => ['required', 'in:approved,rejected'],
-                'approval_notes' => ['nullable', 'string', 'max:500'],
-            ]);
+            $validated = $request->validated();
 
             $updated = $this->whatsAppTemplateService->simulateApproval(
                 $template,
                 $validated['approval_status'],
                 $validated['approval_notes'] ?? null,
             );
+            $dashboard = $this->whatsAppTemplateService->dashboardPayload();
 
             $data = [
                     'template' => $updated,
-                    'dashboard' => $this->whatsAppTemplateService->dashboardPayload(),
+                    'dashboard' => $dashboard,
                 ];
 
             DB::commit();

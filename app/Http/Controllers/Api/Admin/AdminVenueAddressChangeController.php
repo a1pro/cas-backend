@@ -3,6 +3,9 @@
 namespace App\Http\Controllers\Api\Admin;
 
 use App\Http\Controllers\Api\BaseController;
+use App\Http\Requests\Admin\ApproveAddressChangeRequest;
+use App\Http\Requests\Admin\ListAddressChangeRequest;
+use App\Http\Requests\Admin\RejectAddressChangeRequest;
 use App\Models\VenueAddressChangeRequest;
 use App\Services\Merchant\VenueAddressApprovalService;
 use Illuminate\Http\Request;
@@ -15,20 +18,20 @@ class AdminVenueAddressChangeController extends BaseController
     ) {
     }
 
-    public function index(Request $request)
+    public function index(ListAddressChangeRequest $request)
     {
         try {
-            $validated = $request->validate([
-                'status' => ['nullable', 'in:all,pending,approved,rejected,superseded'],
-                'limit' => ['nullable', 'integer', 'min:1', 'max:100'],
-            ]);
+            $validated = $request->validated();
+
+            $summary = $this->addressApprovalService->adminDashboardPayload()['summary'];
+            $items = $this->addressApprovalService->listPayloads(
+                $validated['status'] ?? 'pending',
+                (int) ($validated['limit'] ?? 25)
+            );
 
             $data = [
-                    'summary' => $this->addressApprovalService->adminDashboardPayload()['summary'],
-                    'items' => $this->addressApprovalService->listPayloads(
-                        $validated['status'] ?? 'pending',
-                        (int) ($validated['limit'] ?? 25)
-                    ),
+                    'summary' => $summary,
+                    'items' => $items,
                 ];
 
             return response()->json([
@@ -47,14 +50,12 @@ class AdminVenueAddressChangeController extends BaseController
         }
     }
 
-    public function approve(Request $request, VenueAddressChangeRequest $venueAddressChangeRequest)
+    public function approve(ApproveAddressChangeRequest $request, VenueAddressChangeRequest $venueAddressChangeRequest)
     {
         try {
             DB::beginTransaction();
 
-            $validated = $request->validate([
-                'admin_notes' => ['nullable', 'string', 'max:500'],
-            ]);
+            $validated = $request->validated();
 
             if ($venueAddressChangeRequest->status !== 'pending') {
                 if (DB::transactionLevel() > 0) {
@@ -69,10 +70,12 @@ class AdminVenueAddressChangeController extends BaseController
             }
 
             $record = $this->addressApprovalService->approve($venueAddressChangeRequest, $validated['admin_notes'] ?? null);
+            $requestPayload = $this->addressApprovalService->payload($record);
+            $dashboard = $this->addressApprovalService->adminDashboardPayload();
 
             $data = [
-                    'request' => $this->addressApprovalService->payload($record),
-                    'dashboard' => $this->addressApprovalService->adminDashboardPayload(),
+                    'request' => $requestPayload,
+                    'dashboard' => $dashboard,
                 ];
 
             DB::commit();
@@ -97,14 +100,12 @@ class AdminVenueAddressChangeController extends BaseController
         }
     }
 
-    public function reject(Request $request, VenueAddressChangeRequest $venueAddressChangeRequest)
+    public function reject(RejectAddressChangeRequest $request, VenueAddressChangeRequest $venueAddressChangeRequest)
     {
         try {
             DB::beginTransaction();
 
-            $validated = $request->validate([
-                'admin_notes' => ['nullable', 'string', 'max:500'],
-            ]);
+            $validated = $request->validated();
 
             if ($venueAddressChangeRequest->status !== 'pending') {
                 if (DB::transactionLevel() > 0) {
@@ -119,10 +120,12 @@ class AdminVenueAddressChangeController extends BaseController
             }
 
             $record = $this->addressApprovalService->reject($venueAddressChangeRequest, $validated['admin_notes'] ?? null);
+            $requestPayload = $this->addressApprovalService->payload($record);
+            $dashboard = $this->addressApprovalService->adminDashboardPayload();
 
             $data = [
-                    'request' => $this->addressApprovalService->payload($record),
-                    'dashboard' => $this->addressApprovalService->adminDashboardPayload(),
+                    'request' => $requestPayload,
+                    'dashboard' => $dashboard,
                 ];
 
             DB::commit();

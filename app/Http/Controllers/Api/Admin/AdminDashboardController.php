@@ -3,6 +3,12 @@
 namespace App\Http\Controllers\Api\Admin;
 
 use App\Http\Controllers\Api\BaseController;
+use App\Http\Requests\Admin\ApproveVenueRequest;
+use App\Http\Requests\Admin\ListMerchantsRequest;
+use App\Http\Requests\Admin\ListVenuesRequest;
+use App\Http\Requests\Admin\RejectVenueRequest;
+use App\Http\Requests\Admin\UpdateMerchantRequest;
+use App\Http\Requests\Admin\UpdateVenueRequest;
 use App\Mail\MerchantApprovedMail;
 use App\Models\Merchant;
 use App\Models\User;
@@ -19,7 +25,6 @@ use App\Services\WhatsApp\WhatsAppTemplateService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Mail;
-use Illuminate\Validation\Rule;
 
 class AdminDashboardController extends BaseController
 {
@@ -52,47 +57,71 @@ class AdminDashboardController extends BaseController
             $fraudSummary = $this->fraudPreventionService->dashboardSummary();
             $whatsAppDashboard = $this->whatsAppTemplateService->dashboardPayload();
 
+            $totalUsers = User::count();
+            $totalMerchants = Merchant::count();
+            $totalVenues = Venue::count();
+            $pendingVenuesCount = Venue::where('approval_status', 'pending')->count();
+            $approvedVenuesCount = Venue::where('approval_status', 'approved')->count();
+            $issuedVouchersCount = Voucher::where('status', 'issued')->count();
+            $redeemedVouchersCount = Voucher::where('status', 'redeemed')->count();
+            $walletDebitsTotal = (float) WalletTransaction::where('type', 'debit')->sum('amount');
+
+            $lowBalanceMerchants = Merchant::with(['user', 'wallet', 'venues.merchant.user'])
+                ->whereHas('user', fn ($query) => $query->where('is_active', true))
+                ->get()
+                ->filter(fn ($merchant) => $merchant->wallet && $merchant->wallet->balance < $merchant->wallet->low_balance_threshold)
+                ->map(fn (Merchant $merchant) => $this->transformMerchant($merchant))
+                ->values();
+
+            $recentTransactions = WalletTransaction::with(['merchant', 'voucher'])
+                ->latest()
+                ->take(15)
+                ->get();
+
+            $pendingMerchantsTransformed = $pendingMerchants->map(fn (Merchant $merchant) => $this->transformMerchant($merchant))->values();
+            $pendingVenuesTransformed = $pendingVenues->map(fn (Venue $venue) => $this->transformVenue($venue))->values();
+
+            $integrationReadiness = $this->integrationReadinessService->dashboardPayload();
+            $offerSync = $this->offerSyncService->adminDashboardPayload();
+            $addressChanges = $this->addressApprovalService->adminDashboardPayload();
+            $providerVoucherLinkSummary = $this->providerVoucherLinkService->summary();
+            $providerVoucherLinkItems = $this->providerVoucherLinkService->listPayloads(8);
+            $whatsAppTemplatePreview = $this->whatsAppTemplateService->approvedTemplatePreview();
+            $areaLaunchAlerts = $this->areaLaunchAlertService->dashboardPayload((int) config('talktocas.area_launch_alerts.dashboard_recent_limit', 8));
+
             $data = [
                     'stats' => [
-                        'total_users' => User::count(),
-                        'total_merchants' => Merchant::count(),
-                        'total_venues' => Venue::count(),
-                        'pending_venues' => Venue::where('approval_status', 'pending')->count(),
-                        'approved_venues' => Venue::where('approval_status', 'approved')->count(),
-                        'issued_vouchers' => Voucher::where('status', 'issued')->count(),
-                        'redeemed_vouchers' => Voucher::where('status', 'redeemed')->count(),
-                        'wallet_debits_total' => (float) WalletTransaction::where('type', 'debit')->sum('amount'),
+                        'total_users' => $totalUsers,
+                        'total_merchants' => $totalMerchants,
+                        'total_venues' => $totalVenues,
+                        'pending_venues' => $pendingVenuesCount,
+                        'approved_venues' => $approvedVenuesCount,
+                        'issued_vouchers' => $issuedVouchersCount,
+                        'redeemed_vouchers' => $redeemedVouchersCount,
+                        'wallet_debits_total' => $walletDebitsTotal,
                         'pending_merchants' => $pendingMerchants->count(),
                         'flagged_users' => $fraudSummary['flagged_users'],
                         'blocked_users' => $fraudSummary['blocked_users'],
                     ],
                     'fraud_summary' => $fraudSummary,
-                    'low_balance_merchants' => Merchant::with(['user', 'wallet', 'venues.merchant.user'])
-                        ->whereHas('user', fn ($query) => $query->where('is_active', true))
-                        ->get()
-                        ->filter(fn ($merchant) => $merchant->wallet && $merchant->wallet->balance < $merchant->wallet->low_balance_threshold)
-                        ->map(fn (Merchant $merchant) => $this->transformMerchant($merchant))
-                        ->values(),
-                    'recent_transactions' => WalletTransaction::with(['merchant', 'voucher'])
-                        ->latest()
-                        ->take(15)
-                        ->get(),
-                    'pending_merchants' => $pendingMerchants->map(fn (Merchant $merchant) => $this->transformMerchant($merchant))->values(),
-                    'pending_venues' => $pendingVenues->map(fn (Venue $venue) => $this->transformVenue($venue))->values(),
-                    'integration_readiness' => $this->integrationReadinessService->dashboardPayload(),
-                    'offer_sync' => $this->offerSyncService->adminDashboardPayload(),
-                    'address_changes' => $this->addressApprovalService->adminDashboardPayload(),
+                    'low_balance_merchants' => $lowBalanceMerchants,
+                    'recent_transactions' => $recentTransactions,
+                    'pending_merchants' => $pendingMerchantsTransformed,
+                    'pending_venues' => $pendingVenuesTransformed,
+                    'integration_readiness' => $integrationReadiness,
+                    'offer_sync' => $offerSync,
+                    'address_changes' => $addressChanges,
                     'provider_voucher_links' => [
-                        'summary' => $this->providerVoucherLinkService->summary(),
-                        'items' => $this->providerVoucherLinkService->listPayloads(8),
+                        'summary' => $providerVoucherLinkSummary,
+                        'items' => $providerVoucherLinkItems,
                     ],
                     'whatsapp_templates' => [
                         'provider' => $whatsAppDashboard['provider'] ?? [],
                         'summary' => $whatsAppDashboard['summary'] ?? [],
                         'approved_template_keys' => $whatsAppDashboard['approved_template_keys'] ?? [],
-                        'preview' => $this->whatsAppTemplateService->approvedTemplatePreview(),
+                        'preview' => $whatsAppTemplatePreview,
                     ],
-                    'area_launch_alerts' => $this->areaLaunchAlertService->dashboardPayload((int) config('talktocas.area_launch_alerts.dashboard_recent_limit', 8)),
+                    'area_launch_alerts' => $areaLaunchAlerts,
                 ];
 
             return response()->json([
@@ -111,15 +140,10 @@ class AdminDashboardController extends BaseController
         }
     }
 
-    public function merchants(Request $request)
+    public function merchants(ListMerchantsRequest $request)
     {
         try {
-            $validated = $request->validate([
-                'status' => ['nullable', 'in:all,pending,approved,rejected,active,inactive'],
-                'search' => ['nullable', 'string', 'max:120'],
-                'page' => ['nullable', 'integer', 'min:1'],
-                'per_page' => ['nullable', 'integer', 'min:1', 'max:100'],
-            ]);
+            $validated = $request->validated();
 
             $query = Merchant::with(['user', 'wallet', 'venues.merchant.user'])->withCount('venues');
 
@@ -154,10 +178,12 @@ class AdminDashboardController extends BaseController
             if ($request->has('page') || $request->has('per_page')) {
                 $perPage = (int) ($validated['per_page'] ?? 25);
                 $paginated = $query->orderBy('business_name')->paginate($perPage);
+                $merchantSummary = $this->merchantSummary();
+                $merchantItems = $paginated->getCollection()->map(fn (Merchant $merchant) => $this->transformMerchant($merchant))->values();
 
                 $data = [
-                        'summary' => $this->merchantSummary(),
-                        'items' => $paginated->getCollection()->map(fn (Merchant $merchant) => $this->transformMerchant($merchant))->values(),
+                        'summary' => $merchantSummary,
+                        'items' => $merchantItems,
                         'pagination' => [
                             'current_page' => $paginated->currentPage(),
                             'per_page' => $paginated->perPage(),
@@ -174,9 +200,10 @@ class AdminDashboardController extends BaseController
                 ], 200);
             }
 
-            $data = $query->orderBy('business_name')->get()->map(
+            $merchantItems = $query->orderBy('business_name')->get()->map(
                     fn (Merchant $merchant) => $this->transformMerchant($merchant)
                 )->values();
+            $data = $merchantItems;
 
             return response()->json([
                 'success' => true,
@@ -194,21 +221,10 @@ class AdminDashboardController extends BaseController
         }
     }
 
-    public function venues(Request $request)
+    public function venues(ListVenuesRequest $request)
     {
         try {
-            $this->normalizeBooleanInput($request, 'active_only');
-
-            $validated = $request->validate([
-                'status' => ['nullable', 'in:all,pending,approved,rejected'],
-                'limit' => ['nullable', 'integer', 'min:1', 'max:200'],
-                'page' => ['nullable', 'integer', 'min:1'],
-                'per_page' => ['nullable', 'integer', 'min:1', 'max:100'],
-                'search' => ['nullable', 'string', 'max:120'],
-                'merchant_id' => ['nullable', 'exists:merchants,id'],
-                'category' => ['nullable', 'string', 'max:80'],
-                'active_only' => ['nullable', 'boolean'],
-            ]);
+            $validated = $request->validated();
 
             $status = $validated['status'] ?? 'pending';
             $limit = (int) ($validated['limit'] ?? 50);
@@ -241,20 +257,26 @@ class AdminDashboardController extends BaseController
                 });
             }
 
+            $pendingVenuesCount = Venue::where('approval_status', 'pending')->count();
+            $approvedVenuesCount = Venue::where('approval_status', 'approved')->count();
+            $rejectedVenuesCount = Venue::where('approval_status', 'rejected')->count();
+            $totalVenuesCount = Venue::count();
+
             $summary = [
-                'pending' => Venue::where('approval_status', 'pending')->count(),
-                'approved' => Venue::where('approval_status', 'approved')->count(),
-                'rejected' => Venue::where('approval_status', 'rejected')->count(),
-                'total' => Venue::count(),
+                'pending' => $pendingVenuesCount,
+                'approved' => $approvedVenuesCount,
+                'rejected' => $rejectedVenuesCount,
+                'total' => $totalVenuesCount,
             ];
 
             if ($request->has('page') || $request->has('per_page')) {
                 $perPage = (int) ($validated['per_page'] ?? 25);
                 $paginated = $query->latest('submitted_for_approval_at')->paginate($perPage);
+                $venueItems = $paginated->getCollection()->map(fn (Venue $venue) => $this->transformVenue($venue))->values();
 
                 $data = [
                         'summary' => $summary,
-                        'items' => $paginated->getCollection()->map(fn (Venue $venue) => $this->transformVenue($venue))->values(),
+                        'items' => $venueItems,
                         'pagination' => [
                             'current_page' => $paginated->currentPage(),
                             'per_page' => $paginated->perPage(),
@@ -271,14 +293,16 @@ class AdminDashboardController extends BaseController
                 ], 200);
             }
 
+            $venueItems = $query
+                ->latest('submitted_for_approval_at')
+                ->limit($limit)
+                ->get()
+                ->map(fn (Venue $venue) => $this->transformVenue($venue))
+                ->values();
+
             $data = [
                     'summary' => $summary,
-                    'items' => $query
-                        ->latest('submitted_for_approval_at')
-                        ->limit($limit)
-                        ->get()
-                        ->map(fn (Venue $venue) => $this->transformVenue($venue))
-                        ->values(),
+                    'items' => $venueItems,
                 ];
 
             return response()->json([
@@ -300,12 +324,13 @@ class AdminDashboardController extends BaseController
     public function pendingMerchants()
     {
         try {
-            $data = Merchant::with(['user', 'wallet', 'venues.merchant.user'])
+            $merchantItems = Merchant::with(['user', 'wallet', 'venues.merchant.user'])
                 ->whereHas('user', fn ($query) => $query->where('is_active', false))
                 ->latest()
                 ->get()
                 ->map(fn (Merchant $merchant) => $this->transformMerchant($merchant))
                 ->values();
+            $data = $merchantItems;
 
             return response()->json([
                 'success' => true,
@@ -349,8 +374,10 @@ class AdminDashboardController extends BaseController
                 );
             }
 
+            $merchantData = $this->transformMerchant($merchant->load(['user', 'wallet', 'venues.merchant.user']));
+
             $data = [
-                    'merchant' => $this->transformMerchant($merchant->load(['user', 'wallet', 'venues.merchant.user'])),
+                    'merchant' => $merchantData,
                     'area_launch_alert' => $areaLaunchAlert,
                 ];
 
@@ -385,8 +412,10 @@ class AdminDashboardController extends BaseController
             $merchant->user?->update(['is_active' => false]);
             $merchant->venues()->where('approval_status', 'pending')->update(['is_active' => false]);
 
+            $merchantData = $this->transformMerchant($merchant->load(['user', 'wallet', 'venues.merchant.user']));
+
             $data = [
-                    'merchant' => $this->transformMerchant($merchant->load(['user', 'wallet', 'venues.merchant.user'])),
+                    'merchant' => $merchantData,
                 ];
 
             DB::commit();
@@ -411,26 +440,12 @@ class AdminDashboardController extends BaseController
         }
     }
 
-    public function updateMerchant(Request $request, Merchant $merchant)
+    public function updateMerchant(UpdateMerchantRequest $request, Merchant $merchant)
     {
         try {
             DB::beginTransaction();
 
-            $this->normalizeBooleanInput($request, 'user_is_active');
-
-            $validated = $request->validate([
-                'business_name' => ['sometimes', 'required', 'string', 'max:255'],
-                'business_type' => ['nullable', 'string', 'max:120'],
-                'contact_email' => ['nullable', 'email', 'max:255'],
-                'contact_phone' => ['nullable', 'string', 'max:50'],
-                'whatsapp_number' => ['nullable', 'string', 'max:50'],
-                'default_service_fee' => ['nullable', 'numeric', 'min:0'],
-                'status' => ['nullable', 'in:pending,active,inactive,rejected'],
-                'user_name' => ['nullable', 'string', 'max:255'],
-                'user_email' => ['nullable', 'email', 'max:255'],
-                'user_is_active' => ['nullable', 'boolean'],
-                'wallet_low_balance_threshold' => ['nullable', 'numeric', 'min:0'],
-            ]);
+            $validated = $request->validated();
 
             $merchantData = collect($validated)
                 ->only(['business_name', 'business_type', 'contact_email', 'contact_phone', 'whatsapp_number', 'default_service_fee', 'status'])
@@ -532,7 +547,7 @@ class AdminDashboardController extends BaseController
         }
     }
 
-    public function approveVenue(Request $request, Venue $venue)
+    public function approveVenue(ApproveVenueRequest $request, Venue $venue)
     {
         try {
             DB::beginTransaction();
@@ -551,15 +566,7 @@ class AdminDashboardController extends BaseController
                 ], 422);
             }
 
-            $validated = $request->validate([
-                'venue_code' => [
-                    'required',
-                    'string',
-                    'size:6',
-                    'regex:/^[A-Za-z0-9]{6}$/',
-                    Rule::unique('venues', 'venue_code')->ignore($venue->id),
-                ],
-            ]);
+            $validated = $request->validated();
 
             $venue->update([
                 'approval_status' => 'approved',
@@ -571,8 +578,10 @@ class AdminDashboardController extends BaseController
                 'rejection_reason' => null,
             ]);
 
+            $venueData = $this->transformVenue($venue->fresh(['merchant.user']));
+
             $data = [
-                    'venue' => $this->transformVenue($venue->fresh(['merchant.user'])),
+                    'venue' => $venueData,
                 ];
 
             DB::commit();
@@ -597,14 +606,12 @@ class AdminDashboardController extends BaseController
         }
     }
 
-    public function rejectVenue(Request $request, Venue $venue)
+    public function rejectVenue(RejectVenueRequest $request, Venue $venue)
     {
         try {
             DB::beginTransaction();
 
-            $validated = $request->validate([
-                'reason' => ['nullable', 'string', 'max:1000'],
-            ]);
+            $validated = $request->validated();
 
             $venue->update([
                 'approval_status' => 'rejected',
@@ -613,8 +620,10 @@ class AdminDashboardController extends BaseController
                 'rejection_reason' => $validated['reason'] ?? null,
             ]);
 
+            $venueData = $this->transformVenue($venue->fresh(['merchant.user']));
+
             $data = [
-                    'venue' => $this->transformVenue($venue->fresh(['merchant.user'])),
+                    'venue' => $venueData,
                 ];
 
             DB::commit();
@@ -639,45 +648,12 @@ class AdminDashboardController extends BaseController
         }
     }
 
-    public function updateVenue(Request $request, Venue $venue)
+    public function updateVenue(UpdateVenueRequest $request, Venue $venue)
     {
         try {
             DB::beginTransaction();
 
-            $this->normalizeBooleanInput($request, 'is_active');
-            $this->normalizeBooleanInput($request, 'offer_enabled');
-            $this->normalizeBooleanInput($request, 'urgency_enabled');
-
-            $validated = $request->validate([
-                'merchant_id' => ['nullable', 'exists:merchants,id'],
-                'name' => ['sometimes', 'required', 'string', 'max:255'],
-                'category' => ['nullable', 'string', 'max:120'],
-                'address' => ['nullable', 'string', 'max:500'],
-                'city' => ['nullable', 'string', 'max:120'],
-                'postcode' => ['nullable', 'string', 'max:20'],
-                'latitude' => ['nullable', 'numeric'],
-                'longitude' => ['nullable', 'numeric'],
-                'description' => ['nullable', 'string'],
-                'is_active' => ['nullable', 'boolean'],
-                'approval_status' => ['nullable', 'in:pending,approved,rejected'],
-                'venue_code' => [
-                    'nullable',
-                    'string',
-                    'size:6',
-                    'regex:/^[A-Za-z0-9]{6}$/',
-                    Rule::unique('venues', 'venue_code')->ignore($venue->id),
-                ],
-                'rejection_reason' => ['nullable', 'string', 'max:1000'],
-                'offer_enabled' => ['nullable', 'boolean'],
-                'offer_value' => ['nullable', 'numeric', 'min:0'],
-                'minimum_order' => ['nullable', 'numeric', 'min:0'],
-                'fulfilment_type' => ['nullable', 'string', 'max:80'],
-                'urgency_enabled' => ['nullable', 'boolean'],
-                'daily_voucher_cap' => ['nullable', 'integer', 'min:0', 'max:100000'],
-                'offer_type' => ['nullable', 'in:food,ride,dual_choice'],
-                'ride_trip_type' => ['nullable', 'in:to_venue,to_and_from'],
-                'promo_message' => ['nullable', 'string', 'max:2000'],
-            ]);
+            $validated = $request->validated();
 
             if (($validated['approval_status'] ?? null) === 'approved') {
                 if (empty($validated['venue_code']) && empty($venue->venue_code)) {
@@ -710,8 +686,10 @@ class AdminDashboardController extends BaseController
 
             $venue->update($validated);
 
+            $venueData = $this->transformVenue($venue->fresh(['merchant.user', 'approvedBy']));
+
             $data = [
-                    'venue' => $this->transformVenue($venue->fresh(['merchant.user', 'approvedBy'])),
+                    'venue' => $venueData,
                 ];
 
             DB::commit();

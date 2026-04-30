@@ -28,13 +28,20 @@ class WhatsAppConnectController extends BaseController
                 'Get voucher',
             ];
 
+            $enabled = $this->threeSixtyDialogService->enabled();
+            $provider = $this->threeSixtyDialogService->providerName();
+            $displayPhoneNumber = $this->threeSixtyDialogService->displayPhoneNumber();
+            $connectUrl = $this->threeSixtyDialogService->startLink();
+            $providerStatus = $this->whatsAppTemplateService->providerStatus();
+            $approvedTemplatesPreview = $this->whatsAppTemplateService->approvedTemplatePreview();
+
             $data = [
-                    'enabled' => $this->threeSixtyDialogService->enabled(),
-                    'provider' => $this->threeSixtyDialogService->providerName(),
-                    'display_phone_number' => $this->threeSixtyDialogService->displayPhoneNumber(),
-                    'connect_url' => $this->threeSixtyDialogService->startLink(),
-                    'provider_status' => $this->whatsAppTemplateService->providerStatus(),
-                    'approved_templates_preview' => $this->whatsAppTemplateService->approvedTemplatePreview(),
+                    'enabled' => $enabled,
+                    'provider' => $provider,
+                    'display_phone_number' => $displayPhoneNumber,
+                    'connect_url' => $connectUrl,
+                    'provider_status' => $providerStatus,
+                    'approved_templates_preview' => $approvedTemplatesPreview,
                     'prompts' => $prompts,
                     'flow' => [
                         'Open site',
