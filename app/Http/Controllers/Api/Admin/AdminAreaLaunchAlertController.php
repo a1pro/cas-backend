@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api\Admin;
 
 use App\Http\Controllers\Api\BaseController;
+use App\Http\Requests\Admin\SendAreaLaunchAlertRequest;
 use App\Models\Merchant;
 use App\Services\Notifications\AreaLaunchAlertService;
 use Illuminate\Http\Request;
@@ -60,14 +61,12 @@ class AdminAreaLaunchAlertController extends BaseController
         }
     }
 
-    public function send(Request $request, Merchant $merchant)
+    public function send(SendAreaLaunchAlertRequest $request, Merchant $merchant)
     {
         try {
             DB::beginTransaction();
 
-            $validated = $request->validate([
-                'notes' => ['nullable', 'string', 'max:1000'],
-            ]);
+            $validated = $request->validated();
 
             $data = $this->areaLaunchAlertService->triggerForMerchant(
                     $merchant->fresh(['venues', 'wallet']),

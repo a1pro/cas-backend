@@ -3,9 +3,9 @@
 namespace App\Http\Controllers\Api\PublicFlow;
 
 use App\Http\Controllers\Api\BaseController;
+use App\Http\Requests\PublicFlow\VenueDiscoveryRequest;
 use App\Services\AreaLaunchService;
 use App\Services\Chat\DiscoveryService;
-use Illuminate\Http\Request;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Validation\ValidationException;
 
@@ -17,18 +17,10 @@ class VenueDiscoveryController extends BaseController
     ) {
     }
 
-    public function index(Request $request)
+    public function index(VenueDiscoveryRequest $request)
     {
         try {
-            $validated = $request->validate([
-                'flow_type' => ['nullable', 'in:going_out,order_food'],
-                'postcode' => ['nullable', 'string', 'max:16'],
-                'latitude' => ['nullable', 'numeric', 'between:-90,90'],
-                'longitude' => ['nullable', 'numeric', 'between:-180,180'],
-                'basket_total' => ['nullable', 'numeric', 'min:0'],
-                'is_uber_existing_customer' => ['nullable', 'boolean'],
-                'is_ubereats_existing_customer' => ['nullable', 'boolean'],
-            ]);
+            $validated = $request->validated();
 
             $flowType = $validated['flow_type'] ?? 'going_out';
             $postcode = isset($validated['postcode']) ? strtoupper(trim($validated['postcode'])) : null;
@@ -98,6 +90,14 @@ class VenueDiscoveryController extends BaseController
                 ];
             })->values();
 
+            $weatherPayload = $this->weatherPayload($result['weather'] ?? null, $flowType);
+            $audienceSummary = $this->areaLaunchService->audienceSummary($postcode);
+            $postcodePrefix = $this->areaLaunchService->extractPostcodePrefix($postcode);
+            $totalResults = $venues->count();
+            $gpsUsed = $latitude !== null && $longitude !== null;
+            $postcodeUsed = (bool) $postcode;
+            $source = $gpsUsed ? 'gps' : ($postcode ? 'postcode' : 'open');
+
             $data = [
                     'flow_type' => $flowType,
                     'filters' => [
@@ -105,18 +105,18 @@ class VenueDiscoveryController extends BaseController
                         'latitude' => $latitude,
                         'longitude' => $longitude,
                         'basket_total' => $basketTotal,
-                        'source' => $latitude !== null && $longitude !== null ? 'gps' : ($postcode ? 'postcode' : 'open'),
+                        'source' => $source,
                     ],
                     'summary' => [
-                        'total_results' => $venues->count(),
-                        'gps_used' => $latitude !== null && $longitude !== null,
-                        'postcode_used' => (bool) $postcode,
+                        'total_results' => $totalResults,
+                        'gps_used' => $gpsUsed,
+                        'postcode_used' => $postcodeUsed,
                     ],
-                    'weather' => $this->weatherPayload($result['weather'] ?? null, $flowType),
+                    'weather' => $weatherPayload,
                     'live_area' => [
                         ...($result['live_area'] ?? []),
-                        'audience' => $this->areaLaunchService->audienceSummary($postcode),
-                        'requested_postcode_prefix' => $this->areaLaunchService->extractPostcodePrefix($postcode),
+                        'audience' => $audienceSummary,
+                        'requested_postcode_prefix' => $postcodePrefix,
                     ],
                     'resolved_location' => $result['resolved_location'] ?? null,
                     'coupon_profile' => $result['coupon_profile'] ?? null,

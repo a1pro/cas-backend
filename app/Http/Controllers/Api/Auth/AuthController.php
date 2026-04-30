@@ -3,6 +3,10 @@
 namespace App\Http\Controllers\Api\Auth;
 
 use App\Http\Controllers\Api\BaseController;
+use App\Http\Requests\Auth\LoginRequest;
+use App\Http\Requests\Auth\MerchantEligibilityRequest;
+use App\Http\Requests\Auth\MerchantRegisterRequest;
+use App\Http\Requests\Auth\RegisterRequest;
 use App\Mail\MerchantApprovalRequiredMail;
 use App\Models\Merchant;
 use App\Models\MerchantWallet;
@@ -16,7 +20,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Mail;
-use Illuminate\Validation\ValidationException;
+
 
 class AuthController extends BaseController
 {
@@ -25,42 +29,31 @@ class AuthController extends BaseController
     ) {
     }
 
-    public function register(Request $request)
+    /**
+     * @param RegisterRequest $request
+     */
+    public function register(RegisterRequest $request)
     {
         try {
             DB::beginTransaction();
 
-            $validated = $request->validate([
-                'name' => ['required', 'string', 'max:255'],
-                'email' => ['required', 'email', 'max:255', 'unique:users,email'],
-                'password' => ['required', 'string', 'min:6', 'confirmed'],
-                'role' => ['nullable', 'in:user,merchant'],
-                'business_name' => ['nullable', 'string', 'max:255'],
-                'business_type' => ['nullable', 'string', 'max:100'],
-                'contact_phone' => ['nullable', 'string', 'max:50'],
-                'postcode' => ['nullable', 'string', 'max:20'],
-                'latitude' => ['nullable', 'numeric', 'between:-90,90'],
-                'longitude' => ['nullable', 'numeric', 'between:-180,180'],
-                'referral_code' => ['nullable', 'string', 'max:24', 'exists:affiliate_profiles,share_code'],
-            ]);
-
+            $validated = $request->validated();
             $role = $validated['role'] ?? 'user';
 
             if ($role === 'merchant') {
-                $merchantRequest = new Request([
+                $merchantData = [
                     'owner_name' => $validated['name'],
                     'email' => $validated['email'],
                     'password' => $validated['password'],
-                    'password_confirmation' => $request->input('password_confirmation'),
                     'business_name' => $validated['business_name'] ?? $validated['name'],
                     'business_type' => $validated['business_type'] ?? 'club',
                     'contact_phone' => $validated['contact_phone'] ?? null,
-                    'postcode' => $request->input('postcode'),
+                    'postcode' => $validated['postcode'] ?? null,
                     'latitude' => $validated['latitude'] ?? null,
                     'longitude' => $validated['longitude'] ?? null,
-                ]);
+                ];
 
-                $data = $this->createMerchantRegistration($merchantRequest);
+                $data = $this->createMerchantRegistration($merchantData);
 
                 DB::commit();
 
@@ -110,17 +103,6 @@ class AuthController extends BaseController
                 'message' => 'Operation completed successfully',
                 'data' => $data,
             ], 200);
-        } catch (ValidationException $e) {
-            if (DB::transactionLevel() > 0) {
-                DB::rollBack();
-            }
-
-            return response()->json([
-                'success' => false,
-                'status_code' => 422,
-                'message' => $e->getMessage(),
-                'errors' => $e->errors(),
-            ], 422);
         } catch (\Exception $e) {
             if (DB::transactionLevel() > 0) {
                 DB::rollBack();
@@ -134,21 +116,15 @@ class AuthController extends BaseController
         }
     }
 
-    public function merchantEligibility(Request $request)
+    /**
+     * @param MerchantEligibilityRequest $request
+     */
+    public function merchantEligibility(MerchantEligibilityRequest $request)
     {
         try {
             DB::beginTransaction();
 
-            $validated = $request->validate([
-                'business_name' => ['nullable', 'string', 'max:255'],
-                'business_type' => ['nullable', 'in:club,bar,restaurant,takeaway,cafe'],
-                'address' => ['nullable', 'string', 'max:255'],
-                'city' => ['nullable', 'string', 'max:100'],
-                'postcode' => ['nullable', 'string', 'max:20'],
-                'venue_description' => ['nullable', 'string', 'max:1000'],
-                'requested_plan' => ['nullable', 'in:free_trial,payg'],
-            ]);
-
+            $validated = $request->validated();
             $data = $this->merchantBusinessRuleService->evaluateRegistration($validated);
 
             DB::commit();
@@ -159,17 +135,6 @@ class AuthController extends BaseController
                 'message' => 'Operation completed successfully',
                 'data' => $data,
             ], 200);
-        } catch (ValidationException $e) {
-            if (DB::transactionLevel() > 0) {
-                DB::rollBack();
-            }
-
-            return response()->json([
-                'success' => false,
-                'status_code' => 422,
-                'message' => $e->getMessage(),
-                'errors' => $e->errors(),
-            ], 422);
         } catch (\Exception $e) {
             if (DB::transactionLevel() > 0) {
                 DB::rollBack();
@@ -183,12 +148,15 @@ class AuthController extends BaseController
         }
     }
 
-    public function registerMerchant(Request $request)
+    /**
+     * @param MerchantRegisterRequest $request
+     */
+    public function registerMerchant(MerchantRegisterRequest $request)
     {
         try {
             DB::beginTransaction();
 
-            $data = $this->createMerchantRegistration($request);
+            $data = $this->createMerchantRegistration($request->validated());
 
             DB::commit();
 
@@ -198,17 +166,6 @@ class AuthController extends BaseController
                 'message' => 'Operation completed successfully',
                 'data' => $data,
             ], 200);
-        } catch (ValidationException $e) {
-            if (DB::transactionLevel() > 0) {
-                DB::rollBack();
-            }
-
-            return response()->json([
-                'success' => false,
-                'status_code' => 422,
-                'message' => $e->getMessage(),
-                'errors' => $e->errors(),
-            ], 422);
         } catch (\Exception $e) {
             if (DB::transactionLevel() > 0) {
                 DB::rollBack();
@@ -222,17 +179,17 @@ class AuthController extends BaseController
         }
     }
 
-    public function login(Request $request)
+    /**
+     * @param LoginRequest $request
+     */
+    public function login(LoginRequest $request)
     {
         try {
             DB::beginTransaction();
 
-            $validated = $request->validate([
-                'login' => ['required', 'string'],
-                'password' => ['required', 'string'],
-            ]);
-
+            $validated = $request->validated();
             $loginValue = trim($validated['login']);
+
             $user = User::query()
                 ->where('email', $loginValue)
                 ->orWhere('phone', $loginValue)
@@ -244,7 +201,7 @@ class AuthController extends BaseController
                 return response()->json([
                     'success' => false,
                     'status_code' => 401,
-                    'message' => '1Invalid credentials',
+                    'message' => 'Invalid credentials',
                 ], 401);
             }
 
@@ -278,17 +235,6 @@ class AuthController extends BaseController
                 'message' => 'Operation completed successfully',
                 'data' => $data,
             ], 200);
-        } catch (ValidationException $e) {
-            if (DB::transactionLevel() > 0) {
-                DB::rollBack();
-            }
-
-            return response()->json([
-                'success' => false,
-                'status_code' => 422,
-                'message' => $e->getMessage(),
-                'errors' => $e->errors(),
-            ], 422);
         } catch (\Exception $e) {
             if (DB::transactionLevel() > 0) {
                 DB::rollBack();
@@ -352,27 +298,8 @@ class AuthController extends BaseController
         }
     }
 
-    private function createMerchantRegistration(Request $request): array
+    private function createMerchantRegistration(array $validated): array
     {
-        $validated = $request->validate([
-            'owner_name' => ['required', 'string', 'max:255'],
-            'email' => ['required', 'email', 'max:255', 'unique:users,email'],
-            'password' => ['required', 'string', 'min:6', 'confirmed'],
-            'business_name' => ['required', 'string', 'max:255'],
-            'business_type' => ['required', 'in:club,bar,restaurant,takeaway,cafe'],
-            'contact_phone' => ['required', 'string', 'max:50'],
-            'whatsapp_number' => ['nullable', 'string', 'max:50'],
-            'address' => ['nullable', 'string', 'max:255'],
-            'city' => ['nullable', 'string', 'max:100'],
-            'postcode' => ['required', 'string', 'max:20'],
-            'low_balance_threshold' => ['nullable', 'numeric', 'min:1'],
-            'latitude' => ['nullable', 'numeric', 'between:-90,90'],
-            'longitude' => ['nullable', 'numeric', 'between:-180,180'],
-            'venue_description' => ['nullable', 'string', 'max:1000'],
-            'tag_code' => ['nullable', 'string', 'max:24', 'exists:venue_tags,share_code'],
-            'requested_plan' => ['nullable', 'in:free_trial,payg'],
-        ]);
-
         $eligibility = $this->merchantBusinessRuleService->evaluateRegistration($validated);
 
         $user = User::create([
@@ -422,7 +349,7 @@ class AuthController extends BaseController
             'name' => $validated['business_name'],
             'category' => $validated['business_type'],
             'city' => $validated['city'] ?? null,
-            'postcode' => strtoupper($validated['postcode']),
+            'postcode' => strtoupper((string) $validated['postcode']),
             'address' => $validated['address'] ?? null,
             'latitude' => $validated['latitude'] ?? null,
             'longitude' => $validated['longitude'] ?? null,

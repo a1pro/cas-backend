@@ -3,9 +3,11 @@
 namespace App\Http\Controllers\Api\Admin;
 
 use App\Http\Controllers\Api\BaseController;
+use App\Http\Requests\Admin\BlockFraudUserRequest;
+use App\Http\Requests\Admin\ReviewFraudUserRequest;
+use App\Http\Requests\Admin\UnblockFraudUserRequest;
 use App\Models\User;
 use App\Services\Fraud\FraudPreventionService;
-use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 
 class AdminFraudController extends BaseController
@@ -18,10 +20,12 @@ class AdminFraudController extends BaseController
     {
         try {
             $users = $this->fraudPreventionService->flaggedUsers();
+            $summary = $this->fraudPreventionService->dashboardSummary();
+            $userPayloads = $users->map(fn (User $user) => $this->fraudPreventionService->userPayload($user))->values();
 
             $data = [
-                    'summary' => $this->fraudPreventionService->dashboardSummary(),
-                    'users' => $users->map(fn (User $user) => $this->fraudPreventionService->userPayload($user))->values(),
+                    'summary' => $summary,
+                    'users' => $userPayloads,
                 ];
 
             return response()->json([
@@ -40,14 +44,12 @@ class AdminFraudController extends BaseController
         }
     }
 
-    public function review(Request $request, User $user)
+    public function review(ReviewFraudUserRequest $request, User $user)
     {
         try {
             DB::beginTransaction();
 
-            $validated = $request->validate([
-                'notes' => ['nullable', 'string', 'max:500'],
-            ]);
+            $validated = $request->validated();
 
             $user = $this->fraudPreventionService->markReviewed($user, $validated['notes'] ?? null);
 
@@ -75,15 +77,12 @@ class AdminFraudController extends BaseController
         }
     }
 
-    public function block(Request $request, User $user)
+    public function block(BlockFraudUserRequest $request, User $user)
     {
         try {
             DB::beginTransaction();
 
-            $validated = $request->validate([
-                'reason' => ['nullable', 'string', 'max:500'],
-                'days' => ['nullable', 'integer', 'min:1', 'max:365'],
-            ]);
+            $validated = $request->validated();
 
             $user = $this->fraudPreventionService->blockUser($user, $validated['reason'] ?? null, $validated['days'] ?? null);
 
@@ -111,14 +110,12 @@ class AdminFraudController extends BaseController
         }
     }
 
-    public function unblock(Request $request, User $user)
+    public function unblock(UnblockFraudUserRequest $request, User $user)
     {
         try {
             DB::beginTransaction();
 
-            $validated = $request->validate([
-                'notes' => ['nullable', 'string', 'max:500'],
-            ]);
+            $validated = $request->validated();
 
             $user = $this->fraudPreventionService->unblockUser($user, $validated['notes'] ?? null);
 

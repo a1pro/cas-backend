@@ -3,6 +3,14 @@
 namespace App\Http\Controllers\Api\Merchant;
 
 use App\Http\Controllers\Api\BaseController;
+use App\Http\Requests\Merchant\CreateMerchantVoucherRequest;
+use App\Http\Requests\Merchant\CreateStripeTopUpCheckoutRequest;
+use App\Http\Requests\Merchant\MerchantOfferSettingsRequest;
+use App\Http\Requests\Merchant\SimulateProviderEventRequest;
+use App\Http\Requests\Merchant\StoreMerchantVenueRequest;
+use App\Http\Requests\Merchant\TopUpWalletRequest;
+use App\Http\Requests\Merchant\UpdateMerchantVenueRequest;
+use App\Http\Requests\Merchant\UpdateVenueProfileRequest;
 use App\Models\Merchant;
 use App\Models\User;
 use App\Models\UserRole;
@@ -53,6 +61,50 @@ class MerchantDashboardController extends BaseController
             $merchant = $this->merchantForUser($request);
             $primaryVenue = $this->primaryVenueForMerchant($merchant);
 
+            $merchantWalletPayload = $this->walletPayload($merchant);
+            $businessRulesPayload = $this->merchantBusinessRulesPayload($merchant);
+
+            $activeVenuesCount = $merchant->venues()->where('is_active', true)->count();
+            $issuedVouchersCount = $merchant->vouchers()->where('status', 'issued')->count();
+            $redeemedVouchersCount = $merchant->vouchers()->where('status', 'redeemed')->count();
+            $walletBalanceFormatted = number_format((float) $merchant->wallet->balance, 2, '.', '');
+
+            $walletStatus = $this->walletAlertService->statusForWallet($merchant->wallet);
+            $stripeFinance = $this->stripeFinanceService->merchantPayload($merchant);
+
+            $providerVerificationSummary = $this->providerVerificationService->summaryForMerchant($merchant);
+            $pendingVouchers = $this->providerVerificationService->pendingVoucherPayloads(
+                $merchant,
+                (int) config('talktocas.provider_verification.dashboard_pending_limit', 5)
+            );
+            $recentEvents = $this->providerVerificationService->recentEventPayloads(
+                $merchant,
+                (int) config('talktocas.provider_verification.dashboard_recent_event_limit', 10)
+            );
+
+            $leadGeneratorSummary = $this->leadGeneratorService->summaryForMerchant(
+                $merchant,
+                (int) config('talktocas.lead_generator.merchant_recent_limit', 5)
+            );
+
+            $weatherBehaviour = $this->weatherBehaviourService->merchantVenueInsights($primaryVenue, $merchant->business_type);
+            $urgencyInventory = $primaryVenue ? $this->venueUrgencyService->summaryForVenue($primaryVenue) : null;
+            $offerSnapshot = $primaryVenue ? $this->offerPayload($merchant, $primaryVenue) : null;
+            $offerSync = $this->offerSyncService->merchantPayload($merchant, $primaryVenue);
+            $addressChange = $this->addressApprovalService->merchantPayload($primaryVenue);
+            $exactVoucherLinks = $this->providerVoucherLinkService->merchantSummary($merchant, $primaryVenue);
+
+            $recentVouchers = Voucher::with(['venue', 'user'])
+                ->where('merchant_id', $merchant->id)
+                ->latest()
+                ->take(10)
+                ->get();
+
+            $recentTransactions = WalletTransaction::where('merchant_id', $merchant->id)
+                ->latest()
+                ->take(10)
+                ->get();
+
             return response()->json([
                 'success' => true,
                 'status_code' => 200,
@@ -69,48 +121,32 @@ class MerchantDashboardController extends BaseController
                             'free_trial_message' => $merchant->free_trial_message,
                             'free_trial_ineligible_reason' => $merchant->free_trial_ineligible_reason,
                             'trial_blocked_keywords' => $merchant->trial_blocked_keywords ?? [],
-                            'wallet' => $this->walletPayload($merchant),
-                            'business_rules' => $this->merchantBusinessRulesPayload($merchant),
+                            'wallet' => $merchantWalletPayload,
+                            'business_rules' => $businessRulesPayload,
                         ],
                         'stats' => [
-                            'active_venues' => $merchant->venues()->where('is_active', true)->count(),
-                            'issued_vouchers' => $merchant->vouchers()->where('status', 'issued')->count(),
-                            'redeemed_vouchers' => $merchant->vouchers()->where('status', 'redeemed')->count(),
-                            'wallet_balance' => number_format((float) $merchant->wallet->balance, 2, '.', ''),
+                            'active_venues' => $activeVenuesCount,
+                            'issued_vouchers' => $issuedVouchersCount,
+                            'redeemed_vouchers' => $redeemedVouchersCount,
+                            'wallet_balance' => $walletBalanceFormatted,
                         ],
                         'primary_venue' => $primaryVenue,
-                        'wallet_status' => $this->walletAlertService->statusForWallet($merchant->wallet),
-                        'stripe_finance' => $this->stripeFinanceService->merchantPayload($merchant),
+                        'wallet_status' => $walletStatus,
+                        'stripe_finance' => $stripeFinance,
                         'provider_verification' => [
-                            'summary' => $this->providerVerificationService->summaryForMerchant($merchant),
-                            'pending_vouchers' => $this->providerVerificationService->pendingVoucherPayloads(
-                                $merchant,
-                                (int) config('talktocas.provider_verification.dashboard_pending_limit', 5)
-                            ),
-                            'recent_events' => $this->providerVerificationService->recentEventPayloads(
-                                $merchant,
-                                (int) config('talktocas.provider_verification.dashboard_recent_event_limit', 10)
-                            ),
+                            'summary' => $providerVerificationSummary,
+                            'pending_vouchers' => $pendingVouchers,
+                            'recent_events' => $recentEvents,
                         ],
-                        'lead_generator' => $this->leadGeneratorService->summaryForMerchant(
-                            $merchant,
-                            (int) config('talktocas.lead_generator.merchant_recent_limit', 5)
-                        ),
-                        'weather_behaviour' => $this->weatherBehaviourService->merchantVenueInsights($primaryVenue, $merchant->business_type),
-                        'urgency_inventory' => $primaryVenue ? $this->venueUrgencyService->summaryForVenue($primaryVenue) : null,
-                        'offer_snapshot' => $primaryVenue ? $this->offerPayload($merchant, $primaryVenue) : null,
-                        'offer_sync' => $this->offerSyncService->merchantPayload($merchant, $primaryVenue),
-                        'address_change' => $this->addressApprovalService->merchantPayload($primaryVenue),
-                        'exact_voucher_links' => $this->providerVoucherLinkService->merchantSummary($merchant, $primaryVenue),
-                        'recent_vouchers' => Voucher::with(['venue', 'user'])
-                            ->where('merchant_id', $merchant->id)
-                            ->latest()
-                            ->take(10)
-                            ->get(),
-                        'recent_transactions' => WalletTransaction::where('merchant_id', $merchant->id)
-                            ->latest()
-                            ->take(10)
-                            ->get(),
+                        'lead_generator' => $leadGeneratorSummary,
+                        'weather_behaviour' => $weatherBehaviour,
+                        'urgency_inventory' => $urgencyInventory,
+                        'offer_snapshot' => $offerSnapshot,
+                        'offer_sync' => $offerSync,
+                        'address_change' => $addressChange,
+                        'exact_voucher_links' => $exactVoucherLinks,
+                        'recent_vouchers' => $recentVouchers,
+                        'recent_transactions' => $recentTransactions,
                     ],
             ], 200);
         
@@ -129,11 +165,13 @@ class MerchantDashboardController extends BaseController
             $merchant = $this->merchantForUser($request);
             $venue = $this->primaryVenueForMerchant($merchant);
 
+            $offerData = $this->offerPayload($merchant, $venue);
+
             return response()->json([
                 'success' => true,
                 'status_code' => 200,
                 'message' => 'Operation completed successfully',
-                'data' => $this->offerPayload($merchant, $venue),
+                'data' => $offerData,
             ], 200);
         
         } catch (\Exception $e) {
@@ -145,7 +183,7 @@ class MerchantDashboardController extends BaseController
         }
     }
 
-    public function updateOfferSettings(Request $request)
+    public function updateOfferSettings(MerchantOfferSettingsRequest $request)
     {
         try {
             DB::beginTransaction();
@@ -154,24 +192,7 @@ class MerchantDashboardController extends BaseController
             $wallet = $merchant->wallet;
             $venue = $this->primaryVenueForMerchant($merchant);
 
-            $validated = $request->validate([
-                'offer_enabled' => ['required', 'boolean'],
-                'business_type' => ['required', 'in:club,bar,restaurant,takeaway,cafe'],
-                'offer_type' => ['required', 'in:food,ride,dual_choice'],
-                'voucher_amount' => ['required', 'numeric', 'min:1', 'max:100'],
-                'offer_days' => ['required', 'array', 'min:1'],
-                'offer_days.*' => ['required', 'in:monday,tuesday,wednesday,thursday,friday,saturday,sunday'],
-                'start_time' => ['nullable', 'date_format:H:i'],
-                'end_time' => ['nullable', 'date_format:H:i'],
-                'minimum_order' => ['nullable', 'numeric', 'min:0'],
-                'fulfilment_type' => ['nullable', 'in:venue,collection,delivery,both'],
-                'ride_trip_type' => ['nullable', 'in:to_venue,to_and_from'],
-                'low_balance_threshold' => ['required', 'numeric', 'min:1', 'max:100000'],
-                'auto_top_up_enabled' => ['nullable', 'boolean'],
-                'auto_top_up_amount' => ['nullable', 'numeric', 'min:1', 'max:100000'],
-                'urgency_enabled' => ['nullable', 'boolean'],
-                'daily_voucher_cap' => ['nullable', 'integer', 'min:1', 'max:500'],
-            ]);
+            $validated = $request->validated();
 
             $offerType = $validated['offer_type'];
             $range = OfferRules::voucherRangeForBusiness($validated['business_type']);
@@ -365,13 +386,15 @@ class MerchantDashboardController extends BaseController
 
             DB::commit();
 
+            $offerData = $this->offerPayload($merchant->fresh(['wallet', 'venues']), $venue->fresh());
+
             return response()->json([
                 'success' => true,
                 'status_code' => 200,
                 'message' => $requiresOfferSync
                     ? 'Offer settings saved locally and queued for Uber for Business sync review.'
                     : 'Offer settings saved successfully.',
-                'data' => $this->offerPayload($merchant->fresh(['wallet', 'venues']), $venue->fresh()),
+                'data' => $offerData,
             ], 200);
         
         } catch (\Exception $e) {
@@ -393,11 +416,13 @@ class MerchantDashboardController extends BaseController
             $merchant = $this->merchantForUser($request);
             $venue = $this->primaryVenueForMerchant($merchant);
 
+            $venueData = $this->venuePayload($merchant, $venue);
+
             return response()->json([
                 'success' => true,
                 'status_code' => 200,
                 'message' => 'Operation completed successfully',
-                'data' => $this->venuePayload($merchant, $venue),
+                'data' => $venueData,
             ], 200);
         
         } catch (\Exception $e) {
@@ -409,7 +434,7 @@ class MerchantDashboardController extends BaseController
         }
     }
 
-    public function updateVenueProfile(Request $request)
+    public function updateVenueProfile(UpdateVenueProfileRequest $request)
     {
         try {
             DB::beginTransaction();
@@ -417,17 +442,7 @@ class MerchantDashboardController extends BaseController
             $merchant = $this->merchantForUser($request);
             $venue = $this->primaryVenueForMerchant($merchant);
 
-            $validated = $request->validate([
-                'business_name' => ['required', 'string', 'max:255'],
-                'business_type' => ['required', 'in:club,bar,restaurant,takeaway,cafe'],
-                'venue_name' => ['required', 'string', 'max:255'],
-                'address' => ['nullable', 'string', 'max:255'],
-                'city' => ['nullable', 'string', 'max:120'],
-                'postcode' => ['required', 'string', 'max:16'],
-                'latitude' => ['nullable', 'numeric', 'between:-90,90'],
-                'longitude' => ['nullable', 'numeric', 'between:-180,180'],
-                'description' => ['nullable', 'string', 'max:1200'],
-            ]);
+            $validated = $request->validated();
 
             $postcode = strtoupper(trim($validated['postcode']));
             $latitude = isset($validated['latitude']) ? (float) $validated['latitude'] : null;
@@ -485,21 +500,25 @@ class MerchantDashboardController extends BaseController
 
                 DB::commit();
 
+                $venueData = $this->venuePayload($merchant->fresh(['wallet', 'venues']), $venue->fresh());
+
                 return response()->json([
                     'success' => true,
                     'status_code' => 200,
                     'message' => $requestRecord->support_message ?? 'Address change request submitted successfully.',
-                    'data' => $this->venuePayload($merchant->fresh(['wallet', 'venues']), $venue->fresh()),
+                    'data' => $venueData,
                 ], 200);
             }
 
             DB::commit();
 
+            $venueData = $this->venuePayload($merchant->fresh(['wallet', 'venues']), $venue->fresh());
+
             return response()->json([
                 'success' => true,
                 'status_code' => 200,
                 'message' => 'Venue profile saved successfully.',
-                'data' => $this->venuePayload($merchant->fresh(['wallet', 'venues']), $venue->fresh()),
+                'data' => $venueData,
             ], 200);
         
         } catch (\Exception $e) {
@@ -543,28 +562,34 @@ class MerchantDashboardController extends BaseController
                 ->orderBy('name');
 
             if (! $this->shouldPaginate($request)) {
+                $venuesData = $query->get()
+                    ->map(fn (Venue $venue) => $this->venueRecordPayload($venue))
+                    ->values();
+
                 return response()->json([
                     'success' => true,
                     'status_code' => 200,
                     'message' => 'Operation completed successfully',
-                    'data' => $query->get()
-                        ->map(fn (Venue $venue) => $this->venueRecordPayload($venue))
-                        ->values(),
+                    'data' => $venuesData,
                 ], 200);
             }
 
             $paginator = $query->paginate($this->boundedPerPage($request))->withQueryString();
+
+            $venueSummary = $this->venueSummaryForMerchant($merchant);
+            $venueItems = $paginator->getCollection()
+                ->map(fn (Venue $venue) => $this->venueRecordPayload($venue))
+                ->values();
+            $paginationMeta = $this->paginationMeta($paginator);
 
             return response()->json([
                 'success' => true,
                 'status_code' => 200,
                 'message' => 'Operation completed successfully',
                 'data' => [
-                        'summary' => $this->venueSummaryForMerchant($merchant),
-                        'items' => $paginator->getCollection()
-                            ->map(fn (Venue $venue) => $this->venueRecordPayload($venue))
-                            ->values(),
-                        'meta' => $this->paginationMeta($paginator),
+                        'summary' => $venueSummary,
+                        'items' => $venueItems,
+                        'meta' => $paginationMeta,
                         'filters' => [
                             'status' => $status,
                             'category' => $category ?: 'all',
@@ -582,13 +607,13 @@ class MerchantDashboardController extends BaseController
         }
     }
 
-    public function createVenue(Request $request)
+    public function createVenue(StoreMerchantVenueRequest $request)
     {
         try {
             DB::beginTransaction();
 
             $merchant = $this->merchantForUser($request);
-            $validated = $this->validateVenuePayload($request);
+            $validated = $request->validated();
 
             $venue = $merchant->venues()->create(array_merge(
                 $this->normalisedVenuePayload($validated),
@@ -610,12 +635,14 @@ class MerchantDashboardController extends BaseController
 
             DB::commit();
 
+            $venueRecord = $this->venueRecordPayload($venue->fresh());
+
             return response()->json([
                 'success' => true,
                 'status_code' => 201,
                 'message' => 'Venue submitted for admin approval.',
                 'data' => [
-                        'venue' => $this->venueRecordPayload($venue->fresh()),
+                        'venue' => $venueRecord,
                     ],
             ], 201);
         
@@ -632,7 +659,7 @@ class MerchantDashboardController extends BaseController
         }
     }
 
-    public function updateVenue(Request $request, Venue $venue)
+    public function updateVenue(UpdateMerchantVenueRequest $request, Venue $venue)
     {
         try {
             DB::beginTransaction();
@@ -649,7 +676,7 @@ class MerchantDashboardController extends BaseController
                 ], 403);
             }
 
-            $validated = $this->validateVenuePayload($request);
+            $validated = $request->validated();
 
             $locationChanged = $this->addressHasChanged($venue, [
                 'address' => $validated['address'] ?? null,
@@ -675,6 +702,8 @@ class MerchantDashboardController extends BaseController
 
             DB::commit();
 
+            $venueRecord = $this->venueRecordPayload($venue->fresh());
+
             return response()->json([
                 'success' => true,
                 'status_code' => 200,
@@ -682,7 +711,7 @@ class MerchantDashboardController extends BaseController
                     ? 'Venue information updated successfully.'
                     : 'Venue updated and sent for admin approval.',
                 'data' => [
-                        'venue' => $this->venueRecordPayload($venue->fresh()),
+                        'venue' => $venueRecord,
                     ],
             ], 200);
         
@@ -783,24 +812,29 @@ class MerchantDashboardController extends BaseController
                 ->latest();
 
             if (! $this->shouldPaginate($request)) {
+                $transactionsData = $query->get();
+
                 return response()->json([
                     'success' => true,
                     'status_code' => 200,
                     'message' => 'Operation completed successfully',
-                    'data' => $query->get(),
+                    'data' => $transactionsData,
                 ], 200);
             }
 
             $paginator = $query->paginate($this->boundedPerPage($request))->withQueryString();
+
+            $transactionSummary = $this->walletTransactionSummaryForMerchant($merchant);
+            $paginationMeta = $this->paginationMeta($paginator);
 
             return response()->json([
                 'success' => true,
                 'status_code' => 200,
                 'message' => 'Operation completed successfully',
                 'data' => [
-                        'summary' => $this->walletTransactionSummaryForMerchant($merchant),
+                        'summary' => $transactionSummary,
                         'items' => $paginator->getCollection()->values(),
-                        'meta' => $this->paginationMeta($paginator),
+                        'meta' => $paginationMeta,
                         'filters' => [
                             'type' => $type,
                             'search' => $search,
@@ -854,24 +888,29 @@ class MerchantDashboardController extends BaseController
                 ->latest();
 
             if (! $this->shouldPaginate($request)) {
+                $vouchersData = $query->get();
+
                 return response()->json([
                     'success' => true,
                     'status_code' => 200,
                     'message' => 'Operation completed successfully',
-                    'data' => $query->get(),
+                    'data' => $vouchersData,
                 ], 200);
             }
 
             $paginator = $query->paginate($this->boundedPerPage($request))->withQueryString();
+
+            $voucherSummary = $this->voucherSummaryForMerchant($merchant);
+            $paginationMeta = $this->paginationMeta($paginator);
 
             return response()->json([
                 'success' => true,
                 'status_code' => 200,
                 'message' => 'Operation completed successfully',
                 'data' => [
-                        'summary' => $this->voucherSummaryForMerchant($merchant),
+                        'summary' => $voucherSummary,
                         'items' => $paginator->getCollection()->values(),
-                        'meta' => $this->paginationMeta($paginator),
+                        'meta' => $paginationMeta,
                         'filters' => [
                             'status' => $status,
                             'journey_type' => $journeyType,
@@ -889,7 +928,7 @@ class MerchantDashboardController extends BaseController
         }
     }
 
-    public function createVoucher(Request $request)
+    public function createVoucher(CreateMerchantVoucherRequest $request)
     {
         try {
             DB::beginTransaction();
@@ -921,14 +960,7 @@ class MerchantDashboardController extends BaseController
                 ], 422);
             }
 
-            $validated = $request->validate([
-                'user_name' => ['required', 'string', 'max:255'],
-                'user_email' => ['nullable', 'email', 'max:255'],
-                'user_phone' => ['nullable', 'string', 'max:50'],
-                'journey_type' => ['required', 'in:ride,food'],
-                'voucher_value' => ['nullable', 'numeric', 'min:1', 'max:100'],
-                'promo_message' => ['nullable', 'string', 'max:80'],
-            ]);
+            $validated = $request->validated();
 
             if (blank($validated['user_email'] ?? null) && blank($validated['user_phone'] ?? null)) {
                 DB::rollBack();
@@ -1039,13 +1071,15 @@ class MerchantDashboardController extends BaseController
 
             DB::commit();
 
+            $walletPayload = $this->walletPayload($merchant->fresh(['wallet']));
+
             return response()->json([
                 'success' => true,
                 'status_code' => 201,
                 'message' => 'Voucher created successfully.',
                 'data' => [
                         'voucher' => $voucher,
-                        'wallet' => $this->walletPayload($merchant->fresh(['wallet'])),
+                        'wallet' => $walletPayload,
                         'exact_link_used' => (bool) $voucher->voucher_link_url,
                     ],
             ], 201);
@@ -1063,7 +1097,7 @@ class MerchantDashboardController extends BaseController
         }
     }
 
-    public function topUp(Request $request)
+    public function topUp(TopUpWalletRequest $request)
     {
         try {
             DB::beginTransaction();
@@ -1071,9 +1105,7 @@ class MerchantDashboardController extends BaseController
             $merchant = $this->merchantForUser($request);
             $wallet = $merchant->wallet;
 
-            $validated = $request->validate([
-                'amount' => ['required', 'numeric', 'min:1'],
-            ]);
+            $validated = $request->validated();
 
             $minimumTopUpAmount = $this->merchantBusinessRuleService->minimumTopUpAmount();
             if ((float) $validated['amount'] < $minimumTopUpAmount) {
@@ -1106,6 +1138,8 @@ class MerchantDashboardController extends BaseController
             ]);
 
             $freshMerchant = $merchant->fresh(['wallet']);
+            $walletPayload = $this->walletPayload($freshMerchant);
+            $alertStatus = $this->walletAlertService->statusForWallet($freshMerchant->wallet);
 
             DB::commit();
 
@@ -1114,8 +1148,8 @@ class MerchantDashboardController extends BaseController
                 'status_code' => 200,
                 'message' => 'Wallet topped up successfully',
                 'data' => [
-                        'wallet' => $this->walletPayload($freshMerchant),
-                        'alert_status' => $this->walletAlertService->statusForWallet($freshMerchant->wallet),
+                        'wallet' => $walletPayload,
+                        'alert_status' => $alertStatus,
                     ],
             ], 200);
         
@@ -1155,6 +1189,7 @@ class MerchantDashboardController extends BaseController
             ]);
 
             $freshMerchant = $merchant->fresh(['wallet']);
+            $walletPayload = $this->walletPayload($freshMerchant);
 
             DB::commit();
 
@@ -1163,7 +1198,7 @@ class MerchantDashboardController extends BaseController
                 'status_code' => 200,
                 'message' => 'Provider completion confirmed and wallet charged successfully.',
                 'data' => [
-                        'wallet' => $this->walletPayload($freshMerchant),
+                        'wallet' => $walletPayload,
                         'voucher' => $result['voucher'],
                         'provider_event' => $result['event'],
                         'low_balance_alert' => $result['low_balance_alert'],
@@ -1183,7 +1218,7 @@ class MerchantDashboardController extends BaseController
         }
     }
 
-    public function simulateProviderEvent(Request $request, Voucher $voucher)
+    public function simulateProviderEvent(SimulateProviderEventRequest $request, Voucher $voucher)
     {
         try {
             DB::beginTransaction();
@@ -1210,23 +1245,20 @@ class MerchantDashboardController extends BaseController
                 ], 403);
             }
 
-            $validated = $request->validate([
-                'event_type' => ['required', 'in:ride_completed,order_completed,order_cancelled,destination_mismatch,ride_terminated_early'],
-                'provider_reference' => ['nullable', 'string', 'max:120'],
-                'destination_match' => ['nullable', 'boolean'],
-                'notes' => ['nullable', 'string', 'max:500'],
-            ]);
+            $validated = $request->validated();
 
             $result = $this->providerVerificationService->simulateEvent($voucher, $validated['event_type'], $validated);
 
             DB::commit();
+
+            $walletPayload = $this->walletPayload($merchant->fresh(['wallet']));
 
             return response()->json([
                 'success' => true,
                 'status_code' => 200,
                 'message' => 'Provider event processed successfully.',
                 'data' => [
-                        'wallet' => $this->walletPayload($merchant->fresh(['wallet'])),
+                        'wallet' => $walletPayload,
                         'voucher' => $result['voucher'],
                         'provider_event' => $result['event'],
                         'low_balance_alert' => $result['low_balance_alert'],
@@ -1246,17 +1278,14 @@ class MerchantDashboardController extends BaseController
         }
     }
 
-    public function createStripeTopUpCheckout(Request $request)
+    public function createStripeTopUpCheckout(CreateStripeTopUpCheckoutRequest $request)
     {
         try {
             DB::beginTransaction();
 
             $merchant = $this->merchantForUser($request);
 
-            $validated = $request->validate([
-                'amount' => ['required', 'numeric', 'min:1'],
-                'mode' => ['nullable', 'in:manual,auto_top_up'],
-            ]);
+            $validated = $request->validated();
 
             $minimumTopUpAmount = $this->merchantBusinessRuleService->minimumTopUpAmount();
             if ((float) $validated['amount'] < $minimumTopUpAmount) {
@@ -1280,13 +1309,16 @@ class MerchantDashboardController extends BaseController
 
             DB::commit();
 
+            $intentPayload = $this->stripeFinanceService->topUpIntentPayload($intent);
+            $stripeFinancePayload = $this->stripeFinanceService->merchantPayload($merchant->fresh(['wallet']));
+
             return response()->json([
                 'success' => true,
                 'status_code' => 201,
                 'message' => 'Stripe top-up checkout created successfully.',
                 'data' => [
-                        'intent' => $this->stripeFinanceService->topUpIntentPayload($intent),
-                        'stripe_finance' => $this->stripeFinanceService->merchantPayload($merchant->fresh(['wallet'])),
+                        'intent' => $intentPayload,
+                        'stripe_finance' => $stripeFinancePayload,
                     ],
             ], 201);
         
@@ -1312,7 +1344,11 @@ class MerchantDashboardController extends BaseController
 
             $result = $this->stripeFinanceService->simulateTopUpSuccess($merchant, $checkoutCode);
             $freshMerchant = $merchant->fresh(['wallet']);
-
+            $intent = $this->stripeFinanceService->topUpIntentPayload($result['intent']);
+            $wallet = $this->walletPayload($freshMerchant);
+            $walletStatus = $this->walletAlertService->statusForWallet($freshMerchant->wallet);
+            $stripeFinance = $this->stripeFinanceService->merchantPayload($freshMerchant);
+            $alreadyProcessed = $result['already_processed'] ?? false;
             DB::commit();
 
             return response()->json([
@@ -1320,11 +1356,11 @@ class MerchantDashboardController extends BaseController
                 'status_code' => 200,
                 'message' => ($result['already_processed'] ?? false) ? 'Stripe top-up was already confirmed earlier.' : 'Stripe top-up confirmed successfully on localhost.',
                 'data' => [
-                        'intent' => $this->stripeFinanceService->topUpIntentPayload($result['intent']),
-                        'wallet' => $this->walletPayload($freshMerchant),
-                        'wallet_status' => $this->walletAlertService->statusForWallet($freshMerchant->wallet),
-                        'stripe_finance' => $this->stripeFinanceService->merchantPayload($freshMerchant),
-                        'already_processed' => $result['already_processed'] ?? false,
+                        'intent' => $intent,
+                        'wallet' => $wallet,
+                        'wallet_status' => $walletStatus,
+                        'stripe_finance' => $stripeFinance,
+                        'already_processed' => $alreadyProcessed,
                     ],
             ], 200);
         
@@ -1448,21 +1484,6 @@ class MerchantDashboardController extends BaseController
             'refund' => WalletTransaction::where('merchant_id', $merchant->id)->where('type', 'refund')->count(),
         ];
     }
-    private function validateVenuePayload(Request $request): array
-    {
-        return $request->validate([
-            'name' => ['required', 'string', 'max:255'],
-            'category' => ['required', 'in:club,bar,restaurant,takeaway,cafe'],
-            'address' => ['nullable', 'string', 'max:255'],
-            'city' => ['nullable', 'string', 'max:120'],
-            'postcode' => ['required', 'string', 'max:16'],
-            'latitude' => ['nullable', 'numeric', 'between:-90,90'],
-            'longitude' => ['nullable', 'numeric', 'between:-180,180'],
-            'description' => ['nullable', 'string', 'max:1200'],
-            'promo_message' => ['nullable', 'string', 'max:500'],
-        ]);
-    }
-
     private function normalisedVenuePayload(array $validated): array
     {
         return [

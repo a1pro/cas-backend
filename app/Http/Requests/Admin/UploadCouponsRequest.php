@@ -2,15 +2,10 @@
 
 namespace App\Http\Requests\Admin;
 
-use Illuminate\Foundation\Http\FormRequest;
+use App\Http\Requests\BaseApiRequest;
 
-class UploadCouponsRequest extends FormRequest
+class UploadCouponsRequest extends BaseApiRequest
 {
-    public function authorize(): bool
-    {
-        return true;
-    }
-
     public function rules(): array
     {
         return [
@@ -19,4 +14,5 @@ class UploadCouponsRequest extends FormRequest
             'venue_id' => ['nullable', 'exists:venues,id'],
         ];
     }
+
 }

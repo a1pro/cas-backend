@@ -1,0 +1,23 @@
+<?php
+
+namespace App\Http\Requests\Merchant;
+
+use App\Http\Requests\BaseApiRequest;
+
+class StoreMerchantVenueRequest extends BaseApiRequest
+{
+    public function rules(): array
+    {
+        return [
+            'name' => ['required', 'string', 'max:255'],
+            'category' => ['required', 'in:club,bar,restaurant,takeaway,cafe'],
+            'address' => ['nullable', 'string', 'max:255'],
+            'city' => ['nullable', 'string', 'max:120'],
+            'postcode' => ['required', 'string', 'max:16'],
+            'latitude' => ['nullable', 'numeric', 'between:-90,90'],
+            'longitude' => ['nullable', 'numeric', 'between:-180,180'],
+            'description' => ['nullable', 'string', 'max:1200'],
+            'promo_message' => ['nullable', 'string', 'max:500'],
+        ];
+    }
+}

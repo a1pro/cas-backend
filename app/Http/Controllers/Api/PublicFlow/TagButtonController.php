@@ -3,8 +3,8 @@
 namespace App\Http\Controllers\Api\PublicFlow;
 
 use App\Http\Controllers\Api\BaseController;
+use App\Http\Requests\PublicFlow\CreateVenueTagRequest;
 use App\Services\Tag\TagButtonService;
-use Illuminate\Http\Request;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Validation\ValidationException;
 use Illuminate\Support\Facades\DB;
@@ -15,20 +15,12 @@ class TagButtonController extends BaseController
     {
     }
 
-    public function create(Request $request)
+    public function create(CreateVenueTagRequest $request)
     {
         try {
             DB::beginTransaction();
 
-            $validated = $request->validate([
-                'venue_name' => ['required', 'string', 'max:255'],
-                'inviter_name' => ['nullable', 'string', 'max:255'],
-                'inviter_phone' => ['nullable', 'string', 'max:50'],
-                'inviter_email' => ['nullable', 'email', 'max:255'],
-                'venue_contact_email' => ['nullable', 'email', 'max:255'],
-                'venue_contact_phone' => ['nullable', 'string', 'max:50'],
-                'source_channel' => ['nullable', 'string', 'max:50'],
-            ]);
+            $validated = $request->validated();
 
             $tag = $this->tagButtonService->create([
                 ...$validated,
@@ -38,9 +30,10 @@ class TagButtonController extends BaseController
                     'request_ip' => $request->ip(),
                 ],
             ]);
+            $tagPayload = $this->tagButtonService->toPublicPayload($tag);
 
             $data = [
-                    'tag' => $this->tagButtonService->toPublicPayload($tag),
+                    'tag' => $tagPayload,
                 ];
 
             DB::commit();
@@ -99,8 +92,10 @@ class TagButtonController extends BaseController
                 ], 404);
             }
 
+            $tagPayload = $this->tagButtonService->toPublicPayload($tag);
+
             $data = [
-                    'tag' => $this->tagButtonService->toPublicPayload($tag),
+                    'tag' => $tagPayload,
                 ];
 
             return response()->json([
@@ -153,8 +148,10 @@ class TagButtonController extends BaseController
                 ], 422);
             }
 
+            $tagPayload = $this->tagButtonService->toPublicPayload($tag);
+
             $data = [
-                    'tag' => $this->tagButtonService->toPublicPayload($tag),
+                    'tag' => $tagPayload,
                 ];
 
             return response()->json([

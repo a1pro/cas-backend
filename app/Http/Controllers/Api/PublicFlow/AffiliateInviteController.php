@@ -3,8 +3,8 @@
 namespace App\Http\Controllers\Api\PublicFlow;
 
 use App\Http\Controllers\Api\BaseController;
+use App\Http\Requests\PublicFlow\ShowAffiliateInviteRequest;
 use App\Services\Affiliate\AffiliateTrackingService;
-use Illuminate\Http\Request;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Validation\ValidationException;
 
@@ -14,7 +14,7 @@ class AffiliateInviteController extends BaseController
     {
     }
 
-    public function show(Request $request, string $shareCode)
+    public function show(ShowAffiliateInviteRequest $request, string $shareCode)
     {
         try {
             $trackClick = $request->boolean('track', true);

@@ -3,9 +3,9 @@
 namespace App\Http\Controllers\Api\PublicFlow;
 
 use App\Http\Controllers\Api\BaseController;
+use App\Http\Requests\PublicFlow\CreateBnplCheckoutRequest;
 use App\Models\BnplVoucherOrder;
 use App\Services\Bnpl\BnplCheckoutService;
-use Illuminate\Http\Request;
 use Illuminate\Validation\ValidationException;
 use InvalidArgumentException;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
@@ -51,7 +51,7 @@ class BnplCheckoutController extends BaseController
         }
     }
 
-    public function store(Request $request)
+    public function store(CreateBnplCheckoutRequest $request)
     {
         try {
             DB::beginTransaction();
@@ -68,13 +68,7 @@ class BnplCheckoutController extends BaseController
                 ], 422);
             }
 
-            $validated = $request->validate([
-                'plan_key' => ['required', 'string', 'max:50'],
-                'customer_name' => ['required', 'string', 'max:255'],
-                'customer_email' => ['required', 'email', 'max:255'],
-                'customer_phone' => ['required', 'string', 'max:50'],
-                'source_context' => ['nullable', 'string', 'max:100'],
-            ]);
+            $validated = $request->validated();
 
             try {
                 $order = $this->bnplCheckoutService->createOrder(auth('sanctum')->user(), $validated);

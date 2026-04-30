@@ -17,13 +17,13 @@ class MerchantApplicationController extends BaseController
     public function index()
     {
         try {
-            $data = Merchant::with(['user', 'wallet', 'venues'])->latest()->get();
+            $merchants = Merchant::with(['user', 'wallet', 'venues'])->latest()->get();
 
             return response()->json([
                 'success' => true,
                 'status_code' => 200,
                 'message' => 'Operation completed successfully',
-                'data' => $data,
+                'data' => $merchants,
             ], 200);
         
         } catch (\Exception $e) {

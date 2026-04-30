@@ -3,6 +3,8 @@
 namespace App\Http\Controllers\Api\Merchant;
 
 use App\Http\Controllers\Api\BaseController;
+use App\Http\Requests\Merchant\StoreMerchantInformationRequest;
+use App\Http\Requests\Merchant\UpdateMerchantInformationRequest;
 use App\Models\Merchant;
 use App\Models\Venue;
 use Illuminate\Http\Request;
@@ -15,19 +17,26 @@ class MerchantInformationController extends BaseController
         try {
             $merchant = $this->merchantForUser($request);
 
+            $pendingCount = $merchant->venues()->where('approval_status', 'pending')->count();
+            $approvedCount = $merchant->venues()->where('approval_status', 'approved')->count();
+            $rejectedCount = $merchant->venues()->where('approval_status', 'rejected')->count();
+            $totalCount = $merchant->venues()->count();
+
+            $venueItems = $merchant->venues()
+                ->orderByRaw("CASE WHEN approval_status = 'pending' THEN 0 WHEN approval_status = 'rejected' THEN 1 WHEN approval_status = 'approved' THEN 2 ELSE 3 END")
+                ->latest('submitted_for_approval_at')
+                ->get()
+                ->map(fn (Venue $venue) => $this->transformVenue($venue))
+                ->values();
+
             $data = [
                 'summary' => [
-                    'pending' => $merchant->venues()->where('approval_status', 'pending')->count(),
-                    'approved' => $merchant->venues()->where('approval_status', 'approved')->count(),
-                    'rejected' => $merchant->venues()->where('approval_status', 'rejected')->count(),
-                    'total' => $merchant->venues()->count(),
+                    'pending' => $pendingCount,
+                    'approved' => $approvedCount,
+                    'rejected' => $rejectedCount,
+                    'total' => $totalCount,
                 ],
-                'items' => $merchant->venues()
-                    ->orderByRaw("CASE WHEN approval_status = 'pending' THEN 0 WHEN approval_status = 'rejected' THEN 1 WHEN approval_status = 'approved' THEN 2 ELSE 3 END")
-                    ->latest('submitted_for_approval_at')
-                    ->get()
-                    ->map(fn (Venue $venue) => $this->transformVenue($venue))
-                    ->values(),
+                'items' => $venueItems,
             ];
 
             return response()->json([
@@ -45,13 +54,13 @@ class MerchantInformationController extends BaseController
         }
     }
 
-    public function store(Request $request)
+    public function store(StoreMerchantInformationRequest $request)
     {
         try {
             DB::beginTransaction();
 
             $merchant = $this->merchantForUser($request);
-            $validated = $this->validateVenuePayload($request, true);
+            $validated = $request->validated();
 
             $venue = $merchant->venues()->create(array_merge($this->normalisedVenuePayload($validated), [
                 'is_active' => false,
@@ -73,13 +82,19 @@ class MerchantInformationController extends BaseController
                 'ride_trip_type' => $validated['ride_trip_type'] ?? 'to_venue',
             ]));
 
+            $venueData = $this->transformVenue($venue->fresh());
+            $pendingCount = $merchant->venues()->where('approval_status', 'pending')->count();
+            $approvedCount = $merchant->venues()->where('approval_status', 'approved')->count();
+            $rejectedCount = $merchant->venues()->where('approval_status', 'rejected')->count();
+            $totalCount = $merchant->venues()->count();
+
             $data = [
-                'venue' => $this->transformVenue($venue->fresh()),
+                'venue' => $venueData,
                 'summary' => [
-                    'pending' => $merchant->venues()->where('approval_status', 'pending')->count(),
-                    'approved' => $merchant->venues()->where('approval_status', 'approved')->count(),
-                    'rejected' => $merchant->venues()->where('approval_status', 'rejected')->count(),
-                    'total' => $merchant->venues()->count(),
+                    'pending' => $pendingCount,
+                    'approved' => $approvedCount,
+                    'rejected' => $rejectedCount,
+                    'total' => $totalCount,
                 ],
             ];
 
@@ -104,7 +119,7 @@ class MerchantInformationController extends BaseController
         }
     }
 
-    public function update(Request $request, Venue $venue)
+    public function update(UpdateMerchantInformationRequest $request, Venue $venue)
     {
         try {
             DB::beginTransaction();
@@ -131,7 +146,7 @@ class MerchantInformationController extends BaseController
                 ], 422);
             }
 
-            $validated = $this->validateVenuePayload($request, false);
+            $validated = $request->validated();
 
             $venue->update(array_merge($this->normalisedVenuePayload($validated, $venue), [
                 'is_active' => false,
@@ -141,8 +156,10 @@ class MerchantInformationController extends BaseController
                 'rejection_reason' => null,
             ]));
 
+            $venueData = $this->transformVenue($venue->fresh());
+
             $data = [
-                'venue' => $this->transformVenue($venue->fresh()),
+                'venue' => $venueData,
             ];
 
             DB::commit();
@@ -216,25 +233,6 @@ class MerchantInformationController extends BaseController
                 'message' => 'Something went wrong. ' . $e->getMessage(),
             ], 500);
         }
-    }
-
-    private function validateVenuePayload(Request $request, bool $creating): array
-    {
-        return $request->validate([
-            'name' => [$creating ? 'required' : 'sometimes', 'string', 'max:255'],
-            'category' => [$creating ? 'required' : 'sometimes', 'in:club,bar,restaurant,takeaway,cafe'],
-            'address' => ['nullable', 'string', 'max:255'],
-            'city' => ['nullable', 'string', 'max:120'],
-            'postcode' => [$creating ? 'required' : 'sometimes', 'string', 'max:16'],
-            'latitude' => ['nullable', 'numeric', 'between:-90,90'],
-            'longitude' => ['nullable', 'numeric', 'between:-180,180'],
-            'description' => ['nullable', 'string', 'max:1200'],
-            'promo_message' => ['nullable', 'string', 'max:500'],
-            'offer_type' => ['nullable', 'in:ride,food,dual_choice,dual'],
-            'ride_trip_type' => ['nullable', 'in:to_venue,to_and_from'],
-            'offer_value' => ['nullable', 'numeric', 'min:0', 'max:999'],
-            'minimum_order' => ['nullable', 'numeric', 'min:0', 'max:9999'],
-        ]);
     }
 
     private function normalisedVenuePayload(array $validated, ?Venue $venue = null): array
